@@ -10,7 +10,7 @@ function extractToken(data: LoginResponse): string {
   const token = data.accessToken ?? data.token ?? data.access_token
 
   if (!token) {
-    throw new Error('El backend no regresó un token válido')
+    throw new Error('El backend no regresó accessToken')
   }
 
   return token
@@ -18,8 +18,8 @@ function extractToken(data: LoginResponse): string {
 
 export async function login(payload: LoginPayload) {
   const { data } = await api.post<LoginResponse>('/auth/login', payload)
-  const token = extractToken(data)
 
+  const token = extractToken(data)
   localStorage.setItem('dentia_token', token)
 
   const user = data.user ?? (await getProfile())

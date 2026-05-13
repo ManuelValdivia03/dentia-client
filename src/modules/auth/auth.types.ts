@@ -8,6 +8,7 @@ export interface AuthUser {
   fullName?: string
   name?: string
   role: UserRole
+  specialty?: string
 }
 
 export interface LoginPayload {
