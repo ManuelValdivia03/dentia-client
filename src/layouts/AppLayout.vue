@@ -21,7 +21,7 @@ function logout() {
   <div class="app-shell">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <AppLogo size="sm" />
+        <AppLogo size="md" />
         <p>Panel clínico</p>
       </div>
 
