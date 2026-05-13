@@ -1,0 +1,69 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth.store'
+
+import LoginPage from '../pages/LoginPage.vue'
+import RegisterPage from '../pages/RegisterPage.vue'
+import DashboardRedirectPage from '../pages/DashboardRedirectPage.vue'
+import PatientDentistsPage from '../pages/PatientDentistsPage.vue'
+import DentistDashboardPage from '../pages/DentistDashboardPage.vue'
+import AdminDashboardPage from '../pages/AdminDashboardPage.vue'
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    {
+      path: '/',
+      redirect: '/dashboard',
+    },
+    {
+      path: '/login',
+      component: LoginPage,
+      meta: { public: true },
+    },
+    {
+      path: '/register',
+      component: RegisterPage,
+      meta: { public: true },
+    },
+    {
+      path: '/dashboard',
+      component: DashboardRedirectPage,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/patient/dentists',
+      component: PatientDentistsPage,
+      meta: { requiresAuth: true, roles: ['PATIENT'] },
+    },
+    {
+      path: '/dentist/dashboard',
+      component: DentistDashboardPage,
+      meta: { requiresAuth: true, roles: ['DENTIST'] },
+    },
+    {
+      path: '/admin/dashboard',
+      component: AdminDashboardPage,
+      meta: { requiresAuth: true, roles: ['ADMIN'] },
+    },
+  ],
+})
+
+router.beforeEach(async (to) => {
+  const authStore = useAuthStore()
+
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    return '/login'
+  }
+
+  if (to.meta.public && authStore.isAuthenticated) {
+    return '/dashboard'
+  }
+
+  const allowedRoles = to.meta.roles as string[] | undefined
+
+  if (allowedRoles && authStore.role && !allowedRoles.includes(authStore.role)) {
+    return '/dashboard'
+  }
+
+  return true
+})
