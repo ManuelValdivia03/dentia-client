@@ -275,6 +275,8 @@ textarea:focus {
 }
 
 .topbar-user {
+  display: grid;
+  gap: 4px;
   text-align: right;
 }
 
@@ -283,6 +285,7 @@ textarea:focus {
 }
 
 .topbar-user span {
+  display: block;
   color: var(--muted);
   font-size: 13px;
 }
@@ -441,7 +444,7 @@ textarea:focus {
   height: auto;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 720px) {
   .auth-split {
     grid-template-columns: 1fr;
   }

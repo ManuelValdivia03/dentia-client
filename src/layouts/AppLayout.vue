@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.store'
+import AppLogo from '../components/AppLogo.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -19,12 +20,9 @@ function logout() {
 <template>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">D</div>
-        <div>
-          <h1>Dentia</h1>
-          <p>Panel clínico</p>
-        </div>
+      <div class="sidebar-brand">
+        <AppLogo size="sm" />
+        <p>Panel clínico</p>
       </div>
 
       <nav class="nav">
@@ -32,8 +30,20 @@ function logout() {
           Dentistas
         </RouterLink>
 
+        <RouterLink v-if="authStore.role === 'PATIENT'" to="/patient/appointments">
+          Mis citas
+        </RouterLink>
+
+        <RouterLink v-if="authStore.role === 'PATIENT'" to="/patient/history">
+          Historial
+        </RouterLink>
+
         <RouterLink v-if="authStore.role === 'DENTIST'" to="/dentist/dashboard">
-          Agenda
+          Dashboard
+        </RouterLink>
+
+        <RouterLink v-if="authStore.role === 'DENTIST'" to="/dentist/agenda">
+          Mi agenda
         </RouterLink>
 
         <RouterLink v-if="authStore.role === 'ADMIN'" to="/admin/dashboard">
@@ -41,14 +51,14 @@ function logout() {
         </RouterLink>
       </nav>
 
-      <button class="logout-button" @click="logout">
+      <button class="logout-button" type="button" @click="logout">
         Cerrar sesión
       </button>
     </aside>
 
     <main class="main">
       <header class="topbar">
-        <div>
+        <div class="topbar-user">
           <strong>{{ displayName }}</strong>
           <span>{{ authStore.role }}</span>
         </div>
