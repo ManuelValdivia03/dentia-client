@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/auth.store'
 
 import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
+import VerifyEmailPage from '../pages/VerifyEmailPage.vue'
 import DashboardRedirectPage from '../pages/DashboardRedirectPage.vue'
 import PatientDentistsPage from '../pages/PatientDentistsPage.vue'
 import DentistDashboardPage from '../pages/DentistDashboardPage.vue'
@@ -26,6 +27,11 @@ export const router = createRouter({
     {
       path: '/register',
       component: RegisterPage,
+      meta: { public: true },
+    },
+    {
+      path: '/verify-email',
+      component: VerifyEmailPage,
       meta: { public: true },
     },
     {

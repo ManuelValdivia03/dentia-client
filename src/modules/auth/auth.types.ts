@@ -9,6 +9,7 @@ export interface AuthUser {
   name?: string
   role: UserRole
   specialty?: string
+  emailVerified?: boolean
 }
 
 export interface LoginPayload {
@@ -20,6 +21,16 @@ export interface RegisterPayload {
   email: string
   password: string
   fullName: string
+  role?: 'PATIENT' | 'DENTIST'
+}
+
+export interface VerifyEmailPayload {
+  email: string
+  code: string
+}
+
+export interface ResendVerificationCodePayload {
+  email: string
 }
 
 export interface LoginResponse {

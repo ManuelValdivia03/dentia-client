@@ -444,6 +444,32 @@ textarea:focus {
   height: auto;
 }
 
+.secondary-button {
+  width: 100%;
+  margin-top: 0.75rem;
+  border: 1px solid #d0d7de;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.success-message {
+  color: #047857;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 720px) {
   .auth-split {
     grid-template-columns: 1fr;

@@ -10,6 +10,8 @@ const authStore = useAuthStore()
 const fullName = ref('')
 const email = ref('')
 const password = ref('')
+const role = ref<'PATIENT' | 'DENTIST'>('PATIENT')
+
 const isLoading = ref(false)
 const errorMessage = ref('')
 
@@ -22,11 +24,29 @@ async function handleRegister() {
       fullName: fullName.value,
       email: email.value,
       password: password.value,
+      role: role.value,
     })
 
-    router.push('/login')
-  } catch {
-    errorMessage.value = 'No se pudo crear la cuenta'
+    router.push({
+      path: '/verify-email',
+      query: {
+        email: email.value,
+      },
+    })
+  } catch (error: any) {
+    console.error('Register error:', error.response?.data ?? error)
+
+    const responseMessage =
+      error.response?.data?.message ??
+      error.response?.data?.error ??
+      error.response?.data
+
+    errorMessage.value =
+      typeof responseMessage === 'string'
+        ? responseMessage
+        : Array.isArray(responseMessage)
+          ? responseMessage.join(', ')
+          : 'No se pudo crear la cuenta'
   } finally {
     isLoading.value = false
   }
@@ -57,10 +77,18 @@ async function handleRegister() {
         <div class="auth-brand">
           <AppLogo size="lg" />
           <h1>Crear cuenta</h1>
-          <p>Registro de paciente</p>
+          <p>Registro en Dentia</p>
         </div>
 
         <form @submit.prevent="handleRegister">
+          <label>
+            Tipo de cuenta
+            <select v-model="role" required>
+              <option value="PATIENT">Paciente</option>
+              <option value="DENTIST">Dentista</option>
+            </select>
+          </label>
+
           <label>
             Nombre completo
             <input v-model="fullName" type="text" required minlength="3" />

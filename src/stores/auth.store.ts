@@ -4,11 +4,15 @@ import {
   getProfile,
   login as loginRequest,
   register as registerRequest,
+  resendVerificationCode as resendVerificationCodeRequest,
+  verifyEmail as verifyEmailRequest,
 } from '../modules/auth/auth.service'
 import type {
   AuthUser,
   LoginPayload,
   RegisterPayload,
+  ResendVerificationCodePayload,
+  VerifyEmailPayload,
 } from '../modules/auth/auth.types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -32,6 +36,16 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(payload: RegisterPayload) {
     return registerRequest(payload)
+  }
+
+  async function verifyEmail(payload: VerifyEmailPayload) {
+    return verifyEmailRequest(payload)
+  }
+
+  async function resendVerificationCode(
+    payload: ResendVerificationCodePayload,
+  ) {
+    return resendVerificationCodeRequest(payload)
   }
 
   async function loadProfile() {
@@ -58,6 +72,8 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     login,
     register,
+    verifyEmail,
+    resendVerificationCode,
     loadProfile,
     logout,
   }

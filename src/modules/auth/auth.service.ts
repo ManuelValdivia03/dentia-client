@@ -4,6 +4,8 @@ import type {
   LoginPayload,
   LoginResponse,
   RegisterPayload,
+  ResendVerificationCodePayload,
+  VerifyEmailPayload,
 } from './auth.types'
 
 function extractToken(data: LoginResponse): string {
@@ -32,6 +34,18 @@ export async function login(payload: LoginPayload) {
 
 export async function register(payload: RegisterPayload) {
   const { data } = await api.post('/auth/register', payload)
+  return data
+}
+
+export async function verifyEmail(payload: VerifyEmailPayload) {
+  const { data } = await api.post('/auth/verify-email', payload)
+  return data
+}
+
+export async function resendVerificationCode(
+  payload: ResendVerificationCodePayload,
+) {
+  const { data } = await api.post('/auth/resend-verification-code', payload)
   return data
 }
 
