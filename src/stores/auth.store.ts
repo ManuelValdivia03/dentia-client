@@ -15,13 +15,32 @@ import type {
   VerifyEmailPayload,
 } from '../modules/auth/auth.types'
 
+function isJwtExpired(token: string): boolean {
+  try {
+    const payloadBase64 = token.split('.')[1]
+    const payload = JSON.parse(atob(payloadBase64))
+
+    if (!payload.exp) return true
+
+    const now = Math.floor(Date.now() / 1000)
+    return payload.exp <= now
+  } catch {
+    return true
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('dentia_token'))
 
   const storedUser = localStorage.getItem('dentia_user')
   const user = ref<AuthUser | null>(storedUser ? JSON.parse(storedUser) : null)
 
-  const isAuthenticated = computed(() => Boolean(token.value))
+  const isAuthenticated = computed(() => {
+    if (!token.value) return false
+
+    return !isJwtExpired(token.value)
+  })
+
   const role = computed(() => user.value?.role ?? null)
 
   async function login(payload: LoginPayload) {
@@ -49,7 +68,10 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function loadProfile() {
-    if (!token.value) return
+    if (!token.value || isJwtExpired(token.value)) {
+      logout()
+      return
+    }
 
     const profile = await getProfile()
     user.value = profile
