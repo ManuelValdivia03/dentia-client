@@ -22,8 +22,6 @@ export async function login(payload: LoginPayload) {
   const { data } = await api.post<LoginResponse>('/auth/login', payload)
 
   const token = extractToken(data)
-  localStorage.setItem('dentia_token', token)
-
   const user = data.user ?? (await getProfile())
 
   return {
