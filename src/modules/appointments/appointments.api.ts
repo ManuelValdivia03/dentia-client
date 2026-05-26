@@ -54,3 +54,13 @@ export async function cancelAppointment(id: string) {
   const { data } = await api.patch<Appointment>(`/appointments/${id}/cancel`)
   return data
 }
+
+export async function confirmAppointment(id: string) {
+  const { data } = await api.patch<Appointment>(`/appointments/${id}/confirm`)
+  return data
+}
+
+export async function completeAppointment(id: string) {
+  const { data } = await api.patch<Appointment>(`/appointments/${id}/complete`)
+  return data
+}
