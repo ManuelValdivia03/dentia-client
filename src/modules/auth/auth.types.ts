@@ -9,6 +9,7 @@ export interface AuthUser {
   name?: string
   role: UserRole
   specialty?: string
+  photoUrl?: string | null
   emailVerified?: boolean
 }
 
@@ -22,6 +23,10 @@ export interface RegisterPayload {
   password: string
   fullName: string
   role?: 'PATIENT' | 'DENTIST'
+  cedulaProfesional?: string
+  escuela?: string
+  descripcion?: string
+  photo?: File | null
 }
 
 export interface VerifyEmailPayload {

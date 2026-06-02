@@ -11,6 +11,10 @@ const fullName = ref('')
 const email = ref('')
 const password = ref('')
 const role = ref<'PATIENT' | 'DENTIST'>('PATIENT')
+const cedulaProfesional = ref('')
+const escuela = ref('')
+const descripcion = ref('')
+const photo = ref<File | null>(null)
 
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -25,6 +29,11 @@ async function handleRegister() {
       email: email.value,
       password: password.value,
       role: role.value,
+      cedulaProfesional:
+        role.value === 'DENTIST' ? cedulaProfesional.value : undefined,
+      escuela: role.value === 'DENTIST' ? escuela.value : undefined,
+      descripcion: role.value === 'DENTIST' ? descripcion.value : undefined,
+      photo: photo.value,
     })
 
     router.push({
@@ -50,6 +59,11 @@ async function handleRegister() {
   } finally {
     isLoading.value = false
   }
+}
+
+function handlePhotoChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  photo.value = input.files?.[0] ?? null
 }
 </script>
 
@@ -102,6 +116,43 @@ async function handleRegister() {
           <label>
             Contraseña
             <input v-model="password" type="password" required minlength="8" />
+          </label>
+
+          <label v-if="role === 'DENTIST'">
+            Cedula profesional
+            <input
+              v-model="cedulaProfesional"
+              type="text"
+              inputmode="numeric"
+              required
+              minlength="7"
+              maxlength="8"
+            />
+          </label>
+
+          <label v-if="role === 'DENTIST'">
+            Escuela de egreso
+            <input v-model="escuela" type="text" required minlength="3" />
+          </label>
+
+          <label v-if="role === 'DENTIST'">
+            Descripcion profesional
+            <textarea
+              v-model="descripcion"
+              required
+              minlength="10"
+              rows="4"
+            />
+          </label>
+
+          <label>
+            Foto de perfil
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              :required="role === 'DENTIST'"
+              @change="handlePhotoChange"
+            />
           </label>
 
           <p v-if="errorMessage" class="error-message">

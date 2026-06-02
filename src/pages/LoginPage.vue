@@ -23,8 +23,28 @@ async function handleLogin() {
     })
 
     router.push('/dashboard')
-    } catch (error: any) {
+  } catch (error: any) {
     console.error('Login error:', error.response?.data ?? error)
+
+    const responseData = error.response?.data
+    const verificationData =
+      responseData?.requiresEmailVerification ||
+      responseData?.message?.requiresEmailVerification
+        ? responseData
+        : null
+
+    if (verificationData) {
+      router.push({
+        path: '/verify-email',
+        query: {
+          email:
+            verificationData.email ??
+            verificationData.message?.email ??
+            email.value,
+        },
+      })
+      return
+    }
 
     const responseMessage =
       error.response?.data?.message ??

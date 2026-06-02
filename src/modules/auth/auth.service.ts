@@ -31,7 +31,22 @@ export async function login(payload: LoginPayload) {
 }
 
 export async function register(payload: RegisterPayload) {
-  const { data } = await api.post('/auth/register', payload)
+  const formData = new FormData()
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null || value === '') {
+      continue
+    }
+
+    if (value instanceof File) {
+      formData.append(key, value)
+      continue
+    }
+
+    formData.append(key, String(value))
+  }
+
+  const { data } = await api.post('/auth/register', formData)
   return data
 }
 
