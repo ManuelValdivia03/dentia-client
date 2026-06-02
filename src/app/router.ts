@@ -76,7 +76,11 @@ router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
   if (authStore.token && !authStore.isAuthenticated) {
-    authStore.logout()
+    const refreshed = await authStore.ensureAuthenticated()
+
+    if (!refreshed) {
+      authStore.logout()
+    }
   }
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {

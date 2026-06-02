@@ -51,3 +51,19 @@ export async function getProfile(): Promise<AuthUser> {
   const { data } = await api.get<AuthUser>('/profile')
   return data
 }
+
+export async function refreshSession() {
+  const { data } = await api.post<LoginResponse>('/auth/refresh')
+
+  const token = extractToken(data)
+  const user = data.user ?? (await getProfile())
+
+  return {
+    token,
+    user,
+  }
+}
+
+export async function logoutSession() {
+  await api.post('/auth/logout')
+}
