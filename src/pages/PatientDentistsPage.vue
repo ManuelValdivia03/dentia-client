@@ -128,16 +128,15 @@ const hasActiveFilters = computed(() => Boolean(search.value || specialtyFilter.
 
 const availabilitySlots = computed(() => {
   const value = availabilityQuery.data.value
-  const now = Date.now()
 
   if (Array.isArray(value)) {
-    return value.filter((slot) => !isPastSlot(slot, now))
+    return value.filter((slot) => !isPastSlot(slot))
   }
 
   if (value && typeof value === 'object' && 'slots' in value) {
     const slots = (value as { slots?: unknown }).slots
     return Array.isArray(slots)
-      ? slots.filter((slot) => !isPastSlot(slot, now))
+      ? slots.filter((slot) => !isPastSlot(slot))
       : []
   }
 
@@ -228,15 +227,38 @@ function closeSchedule() {
 }
 
 function getLocalDateValue(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+  const { year, month, day } = getMexicoDateTimeParts(date)
 
   return `${year}-${month}-${day}`
 }
 
 function getLocalTimeValue(date = new Date()) {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const { hour, minute } = getMexicoDateTimeParts(date)
+
+  return `${hour}:${minute}`
+}
+
+function getMexicoDateTimeParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? ''
+
+  return {
+    year: value('year'),
+    month: value('month'),
+    day: value('day'),
+    hour: value('hour') === '24' ? '00' : value('hour'),
+    minute: value('minute'),
+  }
 }
 
 function isBeforeToday(date: string) {
@@ -246,12 +268,32 @@ function isBeforeToday(date: string) {
 function isSelectedTimePast(date: string, time: string) {
   if (!date || !time) return false
 
-  const selectedDate = new Date(`${date}T${time}:00`)
-  return Number.isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now()
+  const today = getLocalDateValue()
+
+  if (date < today) return true
+  if (date > today) return false
+
+  return time <= getLocalTimeValue()
 }
 
-function localDateTimeValue(date: Date) {
-  return `${getLocalDateValue(date)}T${getLocalTimeValue(date)}:00`
+function localDateTimeValue(date: string, time: string) {
+  return `${date}T${time}:00`
+}
+
+function addMinutesToLocalDateTime(date: string, time: string, minutesToAdd: number) {
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  const value = new Date(Date.UTC(year, month - 1, day, hour, minute + minutesToAdd))
+  const nextDate = [
+    value.getUTCFullYear(),
+    String(value.getUTCMonth() + 1).padStart(2, '0'),
+    String(value.getUTCDate()).padStart(2, '0'),
+  ].join('-')
+  const nextTime = `${String(value.getUTCHours()).padStart(2, '0')}:${String(
+    value.getUTCMinutes(),
+  ).padStart(2, '0')}`
+
+  return localDateTimeValue(nextDate, nextTime)
 }
 
 function slotLabel(slot: unknown) {
@@ -262,10 +304,7 @@ function slotLabel(slot: unknown) {
   if (value.label) return value.label
   if (!value.startAt) return 'Horario disponible'
 
-  return new Date(value.startAt).toLocaleTimeString('es-MX', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return timePartFromDateTime(value.startAt)
 }
 
 function slotTime(slot: unknown) {
@@ -274,21 +313,31 @@ function slotTime(slot: unknown) {
   const value = slot as { startAt?: string }
   if (!value.startAt) return ''
 
-  const date = new Date(value.startAt)
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  return timePartFromDateTime(value.startAt)
 }
 
-function isPastSlot(slot: unknown, now = Date.now()) {
+function isPastSlot(slot: unknown) {
   if (typeof slot === 'string') {
     if (!appointmentDate.value) return false
-    return new Date(`${appointmentDate.value}T${slot}:00`).getTime() <= now
+    return isSelectedTimePast(appointmentDate.value, slot)
   }
 
   const value = slot as { startAt?: string; available?: boolean }
   if (value.available === false) return true
   if (!value.startAt) return false
 
-  return new Date(value.startAt).getTime() <= now
+  return isSelectedTimePast(
+    datePartFromDateTime(value.startAt),
+    timePartFromDateTime(value.startAt),
+  )
+}
+
+function datePartFromDateTime(value: string) {
+  return value.slice(0, 10)
+}
+
+function timePartFromDateTime(value: string) {
+  return value.slice(11, 16)
 }
 
 async function submitAppointment() {
@@ -307,9 +356,6 @@ async function submitAppointment() {
     return
   }
 
-  const start = new Date(`${appointmentDate.value}T${appointmentTime.value}:00`)
-  const end = new Date(start.getTime() + 60 * 60 * 1000)
-
   if (isSelectedTimePast(appointmentDate.value, appointmentTime.value)) {
     formError.value = 'Elige una hora posterior al momento actual.'
     return
@@ -320,8 +366,8 @@ async function submitAppointment() {
   try {
     await createAppointment({
       dentistId: selectedDentist.value.domainId,
-      startAt: localDateTimeValue(start),
-      endAt: localDateTimeValue(end),
+      startAt: localDateTimeValue(appointmentDate.value, appointmentTime.value),
+      endAt: addMinutesToLocalDateTime(appointmentDate.value, appointmentTime.value, 60),
       reason: reason.value || undefined,
       notes: notes.value || undefined,
     })
