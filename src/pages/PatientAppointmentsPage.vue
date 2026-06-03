@@ -18,6 +18,8 @@ const rescheduleTime = ref('')
 const ratingTarget = ref<Appointment | null>(null)
 const ratingScore = ref(5)
 const ratingComment = ref('')
+const today = new Date().toISOString().slice(0, 10)
+const rescheduleError = ref('')
 
 const appointmentsQuery = useQuery({
   queryKey: ['appointments'],
@@ -76,7 +78,10 @@ function canCancel(appointment: Appointment) {
 
 function canReschedule(appointment: Appointment) {
   const status = normalizeStatus(appointment.status)
-  return status === 'PENDING' || status === 'CONFIRMED'
+  return (
+    (status === 'PENDING' || status === 'CONFIRMED') &&
+    new Date(appointment.startAt).getTime() > Date.now()
+  )
 }
 
 function canRate(appointment: Appointment) {
@@ -100,12 +105,24 @@ function openReschedule(appointment: Appointment) {
 }
 
 async function submitReschedule() {
+  rescheduleError.value = ''
+
   if (!rescheduleTarget.value || !rescheduleDate.value || !rescheduleTime.value) {
+    return
+  }
+
+  if (rescheduleDate.value < today) {
+    rescheduleError.value = 'No puedes reprogramar citas en fechas pasadas.'
     return
   }
 
   const start = new Date(`${rescheduleDate.value}T${rescheduleTime.value}:00`)
   const end = new Date(start.getTime() + 60 * 60 * 1000)
+
+  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
+    rescheduleError.value = 'Selecciona una fecha y hora futuras.'
+    return
+  }
 
   await rescheduleMutation.mutateAsync({
     id: rescheduleTarget.value.id,
@@ -216,7 +233,7 @@ async function submitRating() {
       <form @submit.prevent="submitReschedule">
         <label>
           Fecha
-          <input v-model="rescheduleDate" type="date" required />
+          <input v-model="rescheduleDate" type="date" :min="today" required />
         </label>
         <label>
           Hora
@@ -225,6 +242,7 @@ async function submitRating() {
         <button class="primary-button" type="submit" :disabled="rescheduleMutation.isPending.value">
           Guardar cambio
         </button>
+        <p v-if="rescheduleError" class="error-message">{{ rescheduleError }}</p>
       </form>
     </div>
 

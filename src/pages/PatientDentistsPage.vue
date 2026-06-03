@@ -23,6 +23,10 @@ const notes = ref('')
 const isCreating = ref(false)
 const formError = ref('')
 const formSuccess = ref('')
+const today = new Date().toISOString().slice(0, 10)
+const isAppointmentDatePast = computed(
+  () => Boolean(appointmentDate.value) && appointmentDate.value < today,
+)
 
 const dentistsQuery = useQuery({
   queryKey: ['dentists'],
@@ -32,7 +36,11 @@ const dentistsQuery = useQuery({
 const availabilityQuery = useQuery({
   queryKey: ['appointments', 'availability', computed(() => selectedDentist.value?.domainId), appointmentDate],
   queryFn: () => getAppointmentAvailability(selectedDentist.value!.domainId, appointmentDate.value),
-  enabled: computed(() => Boolean(selectedDentist.value?.domainId && appointmentDate.value)),
+  enabled: computed(
+    () =>
+      Boolean(selectedDentist.value?.domainId && appointmentDate.value) &&
+      !isAppointmentDatePast.value,
+  ),
 })
 
 const ratingsQuery = useQuery({
@@ -56,14 +64,17 @@ const filteredDentists = computed(() => {
 
 const availabilitySlots = computed(() => {
   const value = availabilityQuery.data.value
+  const now = Date.now()
 
   if (Array.isArray(value)) {
-    return value
+    return value.filter((slot) => !isPastSlot(slot, now))
   }
 
   if (value && typeof value === 'object' && 'slots' in value) {
     const slots = (value as { slots?: unknown }).slots
-    return Array.isArray(slots) ? slots : []
+    return Array.isArray(slots)
+      ? slots.filter((slot) => !isPastSlot(slot, now))
+      : []
   }
 
   return []
@@ -125,6 +136,19 @@ function slotTime(slot: unknown) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+function isPastSlot(slot: unknown, now = Date.now()) {
+  if (typeof slot === 'string') {
+    if (!appointmentDate.value) return false
+    return new Date(`${appointmentDate.value}T${slot}:00`).getTime() <= now
+  }
+
+  const value = slot as { startAt?: string; available?: boolean }
+  if (value.available === false) return true
+  if (!value.startAt) return false
+
+  return new Date(value.startAt).getTime() <= now
+}
+
 async function submitAppointment() {
   formError.value = ''
   formSuccess.value = ''
@@ -136,8 +160,18 @@ async function submitAppointment() {
     return
   }
 
+  if (isAppointmentDatePast.value) {
+    formError.value = 'No puedes agendar citas en fechas pasadas.'
+    return
+  }
+
   const start = new Date(`${appointmentDate.value}T${appointmentTime.value}:00`)
   const end = new Date(start.getTime() + 60 * 60 * 1000)
+
+  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
+    formError.value = 'Selecciona una fecha y hora futuras.'
+    return
+  }
 
   isCreating.value = true
 
@@ -236,7 +270,7 @@ async function submitAppointment() {
       <form @submit.prevent="submitAppointment">
         <label>
           Fecha
-          <input v-model="appointmentDate" type="date" required />
+          <input v-model="appointmentDate" type="date" :min="today" required />
         </label>
 
         <label v-if="availabilitySlots.length">
@@ -270,6 +304,9 @@ async function submitAppointment() {
 
         <p v-if="availabilityQuery.isError.value" class="error-message">
           No se pudo consultar disponibilidad; puedes elegir fecha y volver a intentar.
+        </p>
+        <p v-if="isAppointmentDatePast" class="error-message">
+          No puedes agendar citas en fechas pasadas.
         </p>
         <p v-if="formError" class="error-message">{{ formError }}</p>
         <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>
