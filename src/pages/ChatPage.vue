@@ -255,12 +255,49 @@ function conversationTitle(conversation: Conversation) {
   return `${patientDisplayName(conversation.patientId)} · ${dentistDisplayName(conversation.dentistId)}`
 }
 
-function messageSenderName(senderId: string) {
-  if (senderId === authStore.user?.domainId) {
+function isOwnMessage(message: ChatMessage) {
+  const senderRole = message.senderRole?.toUpperCase()
+  const currentRole = authStore.role?.toUpperCase()
+
+  if (senderRole && currentRole && senderRole === currentRole) {
+    return true
+  }
+
+  return message.senderId === currentParticipantId()
+}
+
+function currentParticipantId() {
+  if (!selectedConversation.value) {
+    return authStore.user?.domainId ?? ''
+  }
+
+  if (authStore.role === 'PATIENT') {
+    return selectedConversation.value.patientId
+  }
+
+  if (authStore.role === 'DENTIST') {
+    return selectedConversation.value.dentistId
+  }
+
+  return authStore.user?.domainId ?? ''
+}
+
+function messageSenderName(message: ChatMessage) {
+  if (isOwnMessage(message)) {
     return 'Tú'
   }
 
-  return patientNameById.value.get(senderId) ?? dentistNameById.value.get(senderId) ?? senderId
+  const senderRole = message.senderRole?.toUpperCase()
+
+  if (senderRole === 'PATIENT' && selectedConversation.value) {
+    return patientDisplayName(selectedConversation.value.patientId)
+  }
+
+  if (senderRole === 'DENTIST' && selectedConversation.value) {
+    return dentistDisplayName(selectedConversation.value.dentistId)
+  }
+
+  return patientNameById.value.get(message.senderId) ?? dentistNameById.value.get(message.senderId) ?? message.senderId
 }
 
 function attachmentLabel(message: { attachment?: { originalName?: string } | null }) {
@@ -528,7 +565,7 @@ async function submitMessage() {
               v-for="message in messagesQuery.data.value ?? []"
               :key="message.id ?? message._id"
               class="message-bubble"
-              :class="{ own: message.senderId === authStore.user?.domainId }"
+              :class="{ own: isOwnMessage(message) }"
             >
               <p>{{ message.body ?? attachmentLabel(message) }}</p>
               <div v-if="message.attachment" class="message-attachment">
@@ -554,7 +591,7 @@ async function submitMessage() {
                   {{ attachmentErrors[attachmentFileId(message)] ?? 'Cargando archivo...' }}
                 </small>
               </div>
-              <span>{{ messageSenderName(message.senderId) }} · {{ formatDate(message.createdAt) }}</span>
+              <span>{{ messageSenderName(message) }} · {{ formatDate(message.createdAt) }}</span>
             </div>
           </div>
 
