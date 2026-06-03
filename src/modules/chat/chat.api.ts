@@ -20,7 +20,12 @@ export interface ChatMessage {
   senderRole: string
   type?: string
   body?: string
-  attachment?: unknown
+  attachment?: {
+    fileId?: string
+    contentType?: string
+    originalName?: string
+    size?: number
+  } | null
   createdAt?: string
   updatedAt?: string
 }

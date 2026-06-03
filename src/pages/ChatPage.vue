@@ -31,6 +31,18 @@ const patientId = ref(authStore.role === 'PATIENT' ? authStore.user?.domainId ??
 const dentistId = ref(authStore.role === 'DENTIST' ? authStore.user?.domainId ?? '' : '')
 const messageBody = ref('')
 const messageFile = ref<File | null>(null)
+const messageError = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
+const allowedAttachmentTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+  'video/mp4',
+  'video/webm',
+]
+const maxAttachmentSize = 50 * 1024 * 1024
+const attachmentAccept = allowedAttachmentTypes.join(',')
 
 const conversationsQuery = useQuery({
   queryKey: ['chat', 'conversations'],
@@ -162,6 +174,10 @@ const sendMessageMutation = useMutation({
   onSuccess: () => {
     messageBody.value = ''
     messageFile.value = null
+    messageError.value = ''
+    if (fileInput.value) {
+      fileInput.value.value = ''
+    }
     queryClient.invalidateQueries({ queryKey: ['chat'] })
   },
 })
@@ -231,6 +247,19 @@ function messageSenderName(senderId: string) {
   return patientNameById.value.get(senderId) ?? dentistNameById.value.get(senderId) ?? senderId
 }
 
+function attachmentLabel(message: { attachment?: { originalName?: string } | null }) {
+  return message.attachment?.originalName ?? 'Archivo adjunto'
+}
+
+function getErrorMessage(error: unknown) {
+  if (typeof error === 'object' && error && 'response' in error) {
+    const response = (error as { response?: { data?: { message?: string } } }).response
+    return response?.data?.message ?? 'No se pudo enviar el archivo.'
+  }
+
+  return 'No se pudo enviar el mensaje.'
+}
+
 function formatDate(value?: string) {
   if (!value) return ''
 
@@ -265,7 +294,29 @@ async function submitConversation() {
 
 function onMessageFileChange(event: Event) {
   const input = event.target as HTMLInputElement
-  messageFile.value = input.files?.[0] ?? null
+  const file = input.files?.[0] ?? null
+  messageError.value = ''
+
+  if (!file) {
+    messageFile.value = null
+    return
+  }
+
+  if (!allowedAttachmentTypes.includes(file.type)) {
+    messageFile.value = null
+    input.value = ''
+    messageError.value = 'Solo puedes enviar imagenes, videos o PDF.'
+    return
+  }
+
+  if (file.size > maxAttachmentSize) {
+    messageFile.value = null
+    input.value = ''
+    messageError.value = 'El archivo debe pesar 50 MB o menos.'
+    return
+  }
+
+  messageFile.value = file
 }
 
 async function submitMessage() {
@@ -273,11 +324,17 @@ async function submitMessage() {
     return
   }
 
-  await sendMessageMutation.mutateAsync({
-    conversationId: selectedConversationId.value,
-    body: messageBody.value || undefined,
-    file: messageFile.value,
-  })
+  messageError.value = ''
+
+  try {
+    await sendMessageMutation.mutateAsync({
+      conversationId: selectedConversationId.value,
+      body: messageBody.value || undefined,
+      file: messageFile.value,
+    })
+  } catch (error) {
+    messageError.value = getErrorMessage(error)
+  }
 }
 </script>
 
@@ -380,14 +437,26 @@ async function submitMessage() {
               class="message-bubble"
               :class="{ own: message.senderId === authStore.user?.domainId }"
             >
-              <p>{{ message.body ?? 'Adjunto enviado' }}</p>
+              <p>{{ message.body ?? attachmentLabel(message) }}</p>
+              <small v-if="message.attachment">{{ attachmentLabel(message) }}</small>
               <span>{{ messageSenderName(message.senderId) }} · {{ formatDate(message.createdAt) }}</span>
             </div>
           </div>
 
           <form class="message-form" @submit.prevent="submitMessage">
             <textarea v-model="messageBody" rows="3" placeholder="Escribe un mensaje" />
-            <input type="file" @change="onMessageFileChange" />
+            <input
+              ref="fileInput"
+              type="file"
+              :accept="attachmentAccept"
+              @change="onMessageFileChange"
+            />
+            <p v-if="messageFile" class="muted-text">
+              Archivo listo: {{ messageFile.name }}
+            </p>
+            <p v-if="messageError" class="error-message">
+              {{ messageError }}
+            </p>
             <button class="primary-button" type="submit" :disabled="sendMessageMutation.isPending.value">
               Enviar
             </button>
