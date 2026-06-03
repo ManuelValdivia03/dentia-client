@@ -983,6 +983,41 @@ textarea:focus {
   font-size: 12px;
 }
 
+.message-attachment {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.message-attachment img,
+.message-attachment video {
+  width: min(280px, 100%);
+  max-height: 260px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  background: white;
+}
+
+.message-attachment video {
+  object-fit: contain;
+}
+
+.attachment-link {
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: white;
+  color: var(--primary);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.attachment-link:hover {
+  border-color: var(--primary);
+}
+
 .message-form {
   margin-top: 14px;
 }

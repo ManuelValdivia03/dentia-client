@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import { useAuthStore } from '../stores/auth.store'
@@ -13,10 +13,12 @@ import {
   getMessages,
   markConversationAsRead,
   sendMessage,
+  type ChatMessage,
   type Conversation,
 } from '../modules/chat/chat.api'
 import { getDentists } from '../modules/dentists/dentists.service'
 import type { Dentist } from '../modules/dentists/dentists.types'
+import { downloadClinicalFile } from '../modules/files/files.api'
 import {
   getUserByDomainId,
   userDisplayName,
@@ -33,6 +35,8 @@ const messageBody = ref('')
 const messageFile = ref<File | null>(null)
 const messageError = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
+const attachmentUrls = ref<Record<string, string>>({})
+const attachmentErrors = ref<Record<string, string>>({})
 const allowedAttachmentTypes = [
   'image/jpeg',
   'image/png',
@@ -198,6 +202,18 @@ watch(patientOptions, (options) => {
   }
 }, { immediate: true })
 
+watch(
+  () => messagesQuery.data.value,
+  (messages) => {
+    loadAttachmentPreviews(messages ?? [])
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  Object.values(attachmentUrls.value).forEach((url) => URL.revokeObjectURL(url))
+})
+
 function hasChatRelation(appointment: Appointment) {
   const status = appointment.status.toUpperCase()
   return status === 'CONFIRMED' || status === 'COMPLETED'
@@ -249,6 +265,83 @@ function messageSenderName(senderId: string) {
 
 function attachmentLabel(message: { attachment?: { originalName?: string } | null }) {
   return message.attachment?.originalName ?? 'Archivo adjunto'
+}
+
+function attachmentFileId(message: ChatMessage) {
+  return message.attachment?.fileId ?? ''
+}
+
+function attachmentUrl(message: ChatMessage) {
+  const id = attachmentFileId(message)
+  return id ? attachmentUrls.value[id] : ''
+}
+
+function isImageAttachment(message: ChatMessage) {
+  return message.attachment?.contentType?.startsWith('image/') || message.type === 'IMAGE'
+}
+
+function isVideoAttachment(message: ChatMessage) {
+  return message.attachment?.contentType?.startsWith('video/') || message.type === 'VIDEO'
+}
+
+function canPreviewAttachment(message: ChatMessage) {
+  return Boolean(attachmentUrl(message))
+}
+
+async function loadAttachmentPreviews(messages: ChatMessage[]) {
+  const visibleFileIds = new Set(
+    messages.map(attachmentFileId).filter(Boolean),
+  )
+
+  for (const [fileId, url] of Object.entries(attachmentUrls.value)) {
+    if (!visibleFileIds.has(fileId)) {
+      URL.revokeObjectURL(url)
+      const nextUrls = { ...attachmentUrls.value }
+      delete nextUrls[fileId]
+      attachmentUrls.value = nextUrls
+    }
+  }
+
+  await Promise.all(
+    messages.map(async (message) => {
+      const fileId = attachmentFileId(message)
+
+      if (!fileId || attachmentUrls.value[fileId] || attachmentErrors.value[fileId]) {
+        return
+      }
+
+      try {
+        const blob = await downloadClinicalFile(fileId)
+        attachmentUrls.value = {
+          ...attachmentUrls.value,
+          [fileId]: URL.createObjectURL(blob),
+        }
+      } catch {
+        attachmentErrors.value = {
+          ...attachmentErrors.value,
+          [fileId]: 'No se pudo cargar el archivo.',
+        }
+      }
+    }),
+  )
+}
+
+async function openAttachment(message: ChatMessage) {
+  let url = attachmentUrl(message)
+  const fileId = attachmentFileId(message)
+
+  if (!url && fileId) {
+    const blob = await downloadClinicalFile(fileId)
+    url = URL.createObjectURL(blob)
+    attachmentUrls.value = {
+      ...attachmentUrls.value,
+      [fileId]: url,
+    }
+  }
+
+  if (url) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
 }
 
 function getErrorMessage(error: unknown) {
@@ -438,7 +531,29 @@ async function submitMessage() {
               :class="{ own: message.senderId === authStore.user?.domainId }"
             >
               <p>{{ message.body ?? attachmentLabel(message) }}</p>
-              <small v-if="message.attachment">{{ attachmentLabel(message) }}</small>
+              <div v-if="message.attachment" class="message-attachment">
+                <img
+                  v-if="isImageAttachment(message) && canPreviewAttachment(message)"
+                  :src="attachmentUrl(message)"
+                  :alt="attachmentLabel(message)"
+                />
+                <video
+                  v-else-if="isVideoAttachment(message) && canPreviewAttachment(message)"
+                  :src="attachmentUrl(message)"
+                  controls
+                />
+                <button
+                  v-else-if="canPreviewAttachment(message)"
+                  class="attachment-link"
+                  type="button"
+                  @click="openAttachment(message)"
+                >
+                  {{ attachmentLabel(message) }}
+                </button>
+                <small v-else>
+                  {{ attachmentErrors[attachmentFileId(message)] ?? 'Cargando archivo...' }}
+                </small>
+              </div>
               <span>{{ messageSenderName(message.senderId) }} · {{ formatDate(message.createdAt) }}</span>
             </div>
           </div>
