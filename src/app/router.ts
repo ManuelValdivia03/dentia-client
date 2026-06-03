@@ -8,6 +8,7 @@ import DoctorRegisterPage from '../pages/DoctorRegisterPage.vue'
 import VerifyEmailPage from '../pages/VerifyEmailPage.vue'
 import DashboardRedirectPage from '../pages/DashboardRedirectPage.vue'
 import PatientDentistsPage from '../pages/PatientDentistsPage.vue'
+import PatientDentistDetailPage from '../pages/PatientDentistDetailPage.vue'
 import DentistDashboardPage from '../pages/DentistDashboardPage.vue'
 import AdminDashboardPage from '../pages/AdminDashboardPage.vue'
 import PatientAppointmentsPage from '../pages/PatientAppointmentsPage.vue'
@@ -56,6 +57,11 @@ export const router = createRouter({
     {
       path: '/patient/dentists',
       component: PatientDentistsPage,
+      meta: { requiresAuth: true, roles: ['PATIENT'] },
+    },
+    {
+      path: '/patient/dentists/:domainId',
+      component: PatientDentistDetailPage,
       meta: { requiresAuth: true, roles: ['PATIENT'] },
     },
     {

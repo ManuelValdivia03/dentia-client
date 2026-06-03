@@ -6,5 +6,8 @@ export interface Dentist {
   email?: string
   specialty?: string
   phone?: string
+  cedulaProfesional?: string
+  escuela?: string
+  descripcion?: string
   photoUrl?: string | null
 }

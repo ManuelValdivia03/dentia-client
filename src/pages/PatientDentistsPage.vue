@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import {
@@ -13,6 +14,7 @@ import {
 import type { Dentist } from '../modules/dentists/dentists.types'
 
 const queryClient = useQueryClient()
+const router = useRouter()
 
 const search = ref('')
 const selectedDentist = ref<Dentist | null>(null)
@@ -128,6 +130,10 @@ function handleDentistPhotoError(dentist: Dentist) {
     ...failedPhotoDentistIds.value,
     dentist.domainId,
   ])
+}
+
+function openDentistDetail(dentist: Dentist) {
+  router.push(`/patient/dentists/${dentist.domainId}`)
 }
 
 function openSchedule(dentist: Dentist) {
@@ -281,7 +287,12 @@ async function submitAppointment() {
       <article
         v-for="dentist in filteredDentists"
         :key="dentist.domainId"
-        class="card"
+        class="card clickable-card"
+        role="button"
+        tabindex="0"
+        @click="openDentistDetail(dentist)"
+        @keydown.enter.prevent="openDentistDetail(dentist)"
+        @keydown.space.prevent="openDentistDetail(dentist)"
       >
         <div class="card-header">
           <div class="avatar">
@@ -305,7 +316,11 @@ async function submitAppointment() {
         </p>
 
         <div class="card-actions">
-          <button class="primary-button" type="button" @click="openSchedule(dentist)">
+          <button
+            class="primary-button"
+            type="button"
+            @click.stop="openSchedule(dentist)"
+          >
             Agendar cita
           </button>
         </div>
