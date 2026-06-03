@@ -1070,6 +1070,50 @@ textarea:focus {
   font-size: 0.9rem;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  overflow: auto;
+  background: rgba(15, 32, 51, 0.34);
+  backdrop-filter: blur(12px);
+}
+
+.modal-panel {
+  width: min(100%, 960px);
+  max-height: calc(100vh - 56px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+  padding: 22px;
+}
+
+.appointment-modal-panel {
+  width: min(100%, 620px);
+}
+
+.profile-modal-panel {
+  width: min(100%, 980px);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.modal-header h2 {
+  margin: 4px 0 0;
+  font-size: 26px;
+}
+
 @media (max-width: 720px) {
   .auth-split {
     grid-template-columns: 1fr;
@@ -1126,5 +1170,19 @@ textarea:focus {
     display: flex;
     gap: 8px;
     align-items: baseline;
+  }
+
+  .modal-backdrop {
+    padding: 14px;
+    align-items: start;
+  }
+
+  .modal-panel {
+    max-height: calc(100vh - 28px);
+    padding: 16px;
+  }
+
+  .modal-header {
+    display: grid;
   }
 }

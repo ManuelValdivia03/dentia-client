@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import AppLayout from '../layouts/AppLayout.vue'
 import { useAuthStore } from '../stores/auth.store'
 
 const authStore = useAuthStore()
+const router = useRouter()
 
 const fullName = ref(authStore.user?.fullName ?? authStore.user?.name ?? '')
 const specialty = ref(authStore.user?.specialty ?? '')
@@ -73,75 +75,87 @@ async function saveProfile() {
     isSaving.value = false
   }
 }
+
+function closeProfile() {
+  router.push('/dashboard')
+}
 </script>
 
 <template>
   <AppLayout>
-    <div class="page-header">
-      <div>
-        <p class="eyebrow">Mi cuenta</p>
-        <h2>Perfil</h2>
-      </div>
-    </div>
+    <div class="modal-backdrop" @click.self="closeProfile">
+      <section class="modal-panel profile-modal-panel" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Mi cuenta</p>
+            <h2>Perfil</h2>
+          </div>
 
-    <div class="profile-grid">
-      <aside class="card profile-summary">
-        <div class="profile-photo-preview">
-          <img v-if="photoUrl" :src="photoUrl" alt="Foto de perfil" />
-          <span v-else>{{ initials }}</span>
-        </div>
-
-        <h3>{{ authStore.user?.fullName ?? authStore.user?.email }}</h3>
-        <p>{{ authStore.user?.email }}</p>
-        <span class="badge">{{ authStore.role }}</span>
-
-        <div class="profile-safe-note">
-          Correo, contraseña y cédula profesional no se editan desde esta ventana.
-        </div>
-      </aside>
-
-      <section class="card">
-        <form @submit.prevent="saveProfile">
-          <fieldset class="form-section">
-            <legend>Datos generales</legend>
-
-            <label>
-              Nombre completo
-              <input v-model="fullName" type="text" required minlength="3" />
-            </label>
-
-            <label>
-              Foto de perfil
-              <input type="file" accept="image/jpeg,image/png,image/webp" @change="onPhotoChange" />
-            </label>
-          </fieldset>
-
-          <fieldset v-if="isDentist" class="form-section">
-            <legend>Datos profesionales</legend>
-
-            <label>
-              Especialidad
-              <input v-model="specialty" type="text" />
-            </label>
-
-            <label>
-              Escuela de egreso
-              <input v-model="escuela" type="text" minlength="3" />
-            </label>
-
-            <label>
-              Descripción profesional
-              <textarea v-model="descripcion" rows="5" minlength="10" />
-            </label>
-          </fieldset>
-
-          <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-          <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
-
-          <button class="primary-button" type="submit" :disabled="isSaving">
-            {{ isSaving ? 'Guardando...' : 'Guardar perfil' }}
+          <button class="secondary-button inline-button" type="button" @click="closeProfile">
+            Cerrar
           </button>
-        </form>
+        </div>
+
+        <div class="profile-grid">
+          <aside class="card profile-summary">
+            <div class="profile-photo-preview">
+              <img v-if="photoUrl" :src="photoUrl" alt="Foto de perfil" />
+              <span v-else>{{ initials }}</span>
+            </div>
+
+            <h3>{{ authStore.user?.fullName ?? authStore.user?.email }}</h3>
+            <p>{{ authStore.user?.email }}</p>
+            <span class="badge">{{ authStore.role }}</span>
+
+            <div class="profile-safe-note">
+              Correo, contraseña y cédula profesional no se editan desde esta ventana.
+            </div>
+          </aside>
+
+          <section class="card">
+            <form @submit.prevent="saveProfile">
+              <fieldset class="form-section">
+                <legend>Datos generales</legend>
+
+                <label>
+                  Nombre completo
+                  <input v-model="fullName" type="text" required minlength="3" />
+                </label>
+
+                <label>
+                  Foto de perfil
+                  <input type="file" accept="image/jpeg,image/png,image/webp" @change="onPhotoChange" />
+                </label>
+              </fieldset>
+
+              <fieldset v-if="isDentist" class="form-section">
+                <legend>Datos profesionales</legend>
+
+                <label>
+                  Especialidad
+                  <input v-model="specialty" type="text" />
+                </label>
+
+                <label>
+                  Escuela de egreso
+                  <input v-model="escuela" type="text" minlength="3" />
+                </label>
+
+                <label>
+                  Descripción profesional
+                  <textarea v-model="descripcion" rows="5" minlength="10" />
+                </label>
+              </fieldset>
+
+              <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+              <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
+
+              <button class="primary-button" type="submit" :disabled="isSaving">
+                {{ isSaving ? 'Guardando...' : 'Guardar perfil' }}
+              </button>
+            </form>
+          </section>
+        </div>
       </section>
     </div>
   </AppLayout>

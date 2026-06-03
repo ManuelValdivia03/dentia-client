@@ -476,72 +476,74 @@ async function submitAppointment() {
       No hay dentistas disponibles con ese filtro.
     </div>
 
-    <div v-if="selectedDentist" class="card section-card">
-      <div class="page-header compact-header">
-        <div>
-          <p class="eyebrow">Nueva cita</p>
-          <h2>{{ dentistName(selectedDentist) }}</h2>
-          <p class="muted-text">
-            {{ ratingAverage.toFixed(1) }} / 5 · {{ ratingTotal }} valoraciones
-          </p>
+    <div v-if="selectedDentist" class="modal-backdrop" @click.self="closeSchedule">
+      <section class="modal-panel appointment-modal-panel" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Nueva cita</p>
+            <h2>{{ dentistName(selectedDentist) }}</h2>
+            <p class="muted-text">
+              {{ ratingAverage.toFixed(1) }} / 5 · {{ ratingTotal }} valoraciones
+            </p>
+          </div>
+
+          <button class="secondary-button inline-button" type="button" @click="closeSchedule">
+            Cerrar
+          </button>
         </div>
 
-        <button class="secondary-button inline-button" type="button" @click="closeSchedule">
-          Cerrar
-        </button>
-      </div>
+        <form @submit.prevent="submitAppointment">
+          <label>
+            Fecha
+            <input v-model="appointmentDate" type="date" :min="today" required />
+          </label>
 
-      <form @submit.prevent="submitAppointment">
-        <label>
-          Fecha
-          <input v-model="appointmentDate" type="date" :min="today" required />
-        </label>
+          <label v-if="availabilitySlots.length">
+            Hora
+            <select v-model="appointmentTime" :disabled="!appointmentDate">
+              <option value="">Selecciona un horario</option>
+              <option
+                v-for="slot in availabilitySlots"
+                :key="slotLabel(slot)"
+                :value="slotTime(slot)"
+              >
+                {{ slotLabel(slot) }}
+              </option>
+            </select>
+          </label>
 
-        <label v-if="availabilitySlots.length">
-          Hora
-          <select v-model="appointmentTime" :disabled="!appointmentDate">
-            <option value="">Selecciona un horario</option>
-            <option
-              v-for="slot in availabilitySlots"
-              :key="slotLabel(slot)"
-              :value="slotTime(slot)"
-            >
-              {{ slotLabel(slot) }}
-            </option>
-          </select>
-        </label>
+          <label v-else>
+            Hora
+            <input
+              v-model="appointmentTime"
+              type="time"
+              :disabled="!appointmentDate"
+              :min="appointmentMinTime"
+              required
+            />
+          </label>
 
-        <label v-else>
-          Hora
-          <input
-            v-model="appointmentTime"
-            type="time"
-            :disabled="!appointmentDate"
-            :min="appointmentMinTime"
-            required
-          />
-        </label>
+          <label>
+            Motivo
+            <input v-model="reason" type="text" placeholder="Consulta general" />
+          </label>
 
-        <label>
-          Motivo
-          <input v-model="reason" type="text" placeholder="Consulta general" />
-        </label>
+          <label>
+            Notas
+            <textarea v-model="notes" rows="3" placeholder="Notas opcionales" />
+          </label>
 
-        <label>
-          Notas
-          <textarea v-model="notes" rows="3" placeholder="Notas opcionales" />
-        </label>
+          <p v-if="availabilityQuery.isError.value" class="error-message">
+            No se pudo consultar disponibilidad; puedes elegir fecha y volver a intentar.
+          </p>
+          <p v-if="formError" class="error-message">{{ formError }}</p>
+          <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>
 
-        <p v-if="availabilityQuery.isError.value" class="error-message">
-          No se pudo consultar disponibilidad; puedes elegir fecha y volver a intentar.
-        </p>
-        <p v-if="formError" class="error-message">{{ formError }}</p>
-        <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>
-
-        <button class="primary-button" type="submit" :disabled="isCreating">
-          {{ isCreating ? 'Agendando...' : 'Confirmar cita' }}
-        </button>
-      </form>
+          <button class="primary-button" type="submit" :disabled="isCreating">
+            {{ isCreating ? 'Agendando...' : 'Confirmar cita' }}
+          </button>
+        </form>
+      </section>
     </div>
   </AppLayout>
 </template>
