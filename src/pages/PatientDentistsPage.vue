@@ -250,6 +250,10 @@ function isSelectedTimePast(date: string, time: string) {
   return Number.isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now()
 }
 
+function localDateTimeValue(date: Date) {
+  return `${getLocalDateValue(date)}T${getLocalTimeValue(date)}:00`
+}
+
 function slotLabel(slot: unknown) {
   if (typeof slot === 'string') return slot
 
@@ -316,8 +320,8 @@ async function submitAppointment() {
   try {
     await createAppointment({
       dentistId: selectedDentist.value.domainId,
-      startAt: start.toISOString(),
-      endAt: end.toISOString(),
+      startAt: localDateTimeValue(start),
+      endAt: localDateTimeValue(end),
       reason: reason.value || undefined,
       notes: notes.value || undefined,
     })
