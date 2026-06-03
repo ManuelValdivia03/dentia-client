@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import {
@@ -9,8 +9,14 @@ import {
   getAppointments,
   type Appointment,
 } from '../modules/appointments/appointments.api'
+import { createPrescription } from '../modules/prescriptions/prescriptions.api'
 
 const queryClient = useQueryClient()
+
+const prescriptionTarget = ref<Appointment | null>(null)
+const diagnosis = ref('')
+const indications = ref('')
+const prescriptionNotes = ref('')
 
 const appointmentsQuery = useQuery({
   queryKey: ['appointments'],
@@ -38,6 +44,16 @@ const cancelMutation = useMutation({
   },
 })
 
+const prescriptionMutation = useMutation({
+  mutationFn: createPrescription,
+  onSuccess: () => {
+    prescriptionTarget.value = null
+    diagnosis.value = ''
+    indications.value = ''
+    prescriptionNotes.value = ''
+  },
+})
+
 const appointments = computed(() => {
   return [...(appointmentsQuery.data.value ?? [])].sort((a, b) => {
     return new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
@@ -49,8 +65,6 @@ function normalizeStatus(status: string) {
 }
 
 function statusLabel(status: string) {
-  const normalized = normalizeStatus(status)
-
   const labels: Record<string, string> = {
     PENDING: 'Pendiente',
     CONFIRMED: 'Confirmada',
@@ -58,7 +72,7 @@ function statusLabel(status: string) {
     COMPLETED: 'Completada',
   }
 
-  return labels[normalized] ?? status
+  return labels[normalizeStatus(status)] ?? status
 }
 
 function formatDate(value: string) {
@@ -79,6 +93,10 @@ function canComplete(appointment: Appointment) {
 function canCancel(appointment: Appointment) {
   const status = normalizeStatus(appointment.status)
   return status !== 'CANCELLED' && status !== 'COMPLETED'
+}
+
+function canPrescribe(appointment: Appointment) {
+  return normalizeStatus(appointment.status) === 'COMPLETED'
 }
 
 async function handleConfirm(id: string) {
@@ -105,6 +123,26 @@ function isBusy() {
     completeMutation.isPending.value ||
     cancelMutation.isPending.value
   )
+}
+
+function openPrescription(appointment: Appointment) {
+  prescriptionTarget.value = appointment
+  diagnosis.value = ''
+  indications.value = ''
+  prescriptionNotes.value = ''
+}
+
+async function submitPrescription() {
+  if (!prescriptionTarget.value) return
+
+  await prescriptionMutation.mutateAsync({
+    appointmentId: prescriptionTarget.value.id,
+    patientId: prescriptionTarget.value.patientId,
+    dentistId: prescriptionTarget.value.dentistId,
+    diagnosis: diagnosis.value,
+    indications: indications.value,
+    notes: prescriptionNotes.value || undefined,
+  })
 }
 </script>
 
@@ -146,7 +184,7 @@ function isBusy() {
         <div class="card-actions">
           <button
             v-if="canConfirm(appointment)"
-            class="primary-button"
+            class="primary-button inline-button"
             type="button"
             :disabled="isBusy()"
             @click="handleConfirm(appointment.id)"
@@ -156,7 +194,7 @@ function isBusy() {
 
           <button
             v-if="canComplete(appointment)"
-            class="primary-button"
+            class="primary-button inline-button"
             type="button"
             :disabled="isBusy()"
             @click="handleComplete(appointment.id)"
@@ -165,8 +203,17 @@ function isBusy() {
           </button>
 
           <button
+            v-if="canPrescribe(appointment)"
+            class="secondary-button inline-button"
+            type="button"
+            @click="openPrescription(appointment)"
+          >
+            Receta
+          </button>
+
+          <button
             v-if="canCancel(appointment)"
-            class="secondary-button"
+            class="secondary-button inline-button"
             type="button"
             :disabled="isBusy()"
             @click="handleCancel(appointment.id)"
@@ -179,6 +226,40 @@ function isBusy() {
 
     <div v-else class="empty-state">
       No tienes citas asignadas.
+    </div>
+
+    <div v-if="prescriptionTarget" class="card section-card">
+      <div class="page-header compact-header">
+        <div>
+          <p class="eyebrow">Nueva receta</p>
+          <h2>{{ prescriptionTarget.reason ?? 'Cita odontológica' }}</h2>
+        </div>
+
+        <button class="secondary-button inline-button" type="button" @click="prescriptionTarget = null">
+          Cerrar
+        </button>
+      </div>
+
+      <form @submit.prevent="submitPrescription">
+        <label>
+          Diagnóstico
+          <textarea v-model="diagnosis" rows="3" required />
+        </label>
+
+        <label>
+          Indicaciones
+          <textarea v-model="indications" rows="4" required />
+        </label>
+
+        <label>
+          Notas
+          <textarea v-model="prescriptionNotes" rows="3" />
+        </label>
+
+        <button class="primary-button" type="submit" :disabled="prescriptionMutation.isPending.value">
+          Guardar receta
+        </button>
+      </form>
     </div>
   </AppLayout>
 </template>

@@ -11,6 +11,27 @@ const displayName = computed(() => {
   return authStore.user?.fullName ?? authStore.user?.name ?? authStore.user?.email
 })
 
+const initials = computed(() => {
+  const value = displayName.value ?? 'U'
+
+  return value
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('')
+})
+
+const photoUrl = computed(() => {
+  const url = authStore.user?.photoUrl
+  if (!url) return ''
+
+  if (url.startsWith('http')) return url
+
+  const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
+  return `${baseUrl}${url}`
+})
+
 function logout() {
   authStore.logout()
   router.push('/login')
@@ -49,6 +70,14 @@ function logout() {
         <RouterLink v-if="authStore.role === 'ADMIN'" to="/admin/dashboard">
           Administración
         </RouterLink>
+
+        <RouterLink to="/chat">
+          Chat
+        </RouterLink>
+
+        <RouterLink to="/profile">
+          Perfil
+        </RouterLink>
       </nav>
 
       <button class="logout-button" type="button" @click="logout">
@@ -62,6 +91,11 @@ function logout() {
           <strong>{{ displayName }}</strong>
           <span>{{ authStore.role }}</span>
         </div>
+
+        <RouterLink class="profile-orb" to="/profile" aria-label="Abrir perfil">
+          <img v-if="photoUrl" :src="photoUrl" alt="" />
+          <span v-else>{{ initials }}</span>
+        </RouterLink>
       </header>
 
       <section class="content">

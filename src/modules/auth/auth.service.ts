@@ -5,6 +5,7 @@ import type {
   LoginResponse,
   RegisterPayload,
   ResendVerificationCodePayload,
+  UpdateProfilePayload,
   VerifyEmailPayload,
 } from './auth.types'
 
@@ -64,6 +65,26 @@ export async function resendVerificationCode(
 
 export async function getProfile(): Promise<AuthUser> {
   const { data } = await api.get<AuthUser>('/profile')
+  return data
+}
+
+export async function updateProfile(payload: UpdateProfilePayload) {
+  const formData = new FormData()
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null || value === '') {
+      continue
+    }
+
+    if (value instanceof File) {
+      formData.append(key, value)
+      continue
+    }
+
+    formData.append(key, String(value))
+  }
+
+  const { data } = await api.patch<AuthUser>('/profile', formData)
   return data
 }
 

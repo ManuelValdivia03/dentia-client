@@ -7,6 +7,7 @@ import {
   refreshSession as refreshSessionRequest,
   register as registerRequest,
   resendVerificationCode as resendVerificationCodeRequest,
+  updateProfile as updateProfileRequest,
   verifyEmail as verifyEmailRequest,
 } from '../modules/auth/auth.service'
 import type {
@@ -14,6 +15,7 @@ import type {
   LoginPayload,
   RegisterPayload,
   ResendVerificationCodePayload,
+  UpdateProfilePayload,
   VerifyEmailPayload,
 } from '../modules/auth/auth.types'
 
@@ -103,6 +105,13 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = profile
 
     localStorage.setItem('dentia_user', JSON.stringify(profile))
+  }
+
+  async function updateProfile(payload: UpdateProfilePayload) {
+    const profile = await updateProfileRequest(payload)
+    user.value = profile
+    localStorage.setItem('dentia_user', JSON.stringify(profile))
+    return profile
   }
 
   async function ensureAuthenticated() {
@@ -318,6 +327,7 @@ export const useAuthStore = defineStore('auth', () => {
     verifyEmail,
     resendVerificationCode,
     loadProfile,
+    updateProfile,
     ensureAuthenticated,
     refreshSession,
     logout,

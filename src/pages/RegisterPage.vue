@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.store'
 import AppLogo from '../components/AppLogo.vue'
@@ -11,6 +11,7 @@ const fullName = ref('')
 const email = ref('')
 const password = ref('')
 const role = ref<'PATIENT' | 'DENTIST'>('PATIENT')
+const specialty = ref('')
 const cedulaProfesional = ref('')
 const escuela = ref('')
 const descripcion = ref('')
@@ -18,6 +19,12 @@ const photo = ref<File | null>(null)
 
 const isLoading = ref(false)
 const errorMessage = ref('')
+
+const roleTitle = computed(() => {
+  return role.value === 'PATIENT'
+    ? 'Datos del paciente'
+    : 'Perfil profesional'
+})
 
 async function handleRegister() {
   errorMessage.value = ''
@@ -29,6 +36,7 @@ async function handleRegister() {
       email: email.value,
       password: password.value,
       role: role.value,
+      specialty: role.value === 'DENTIST' ? specialty.value : undefined,
       cedulaProfesional:
         role.value === 'DENTIST' ? cedulaProfesional.value : undefined,
       escuela: role.value === 'DENTIST' ? escuela.value : undefined,
@@ -38,13 +46,9 @@ async function handleRegister() {
 
     router.push({
       path: '/verify-email',
-      query: {
-        email: email.value,
-      },
+      query: { email: email.value },
     })
   } catch (error: any) {
-    console.error('Register error:', error.response?.data ?? error)
-
     const responseMessage =
       error.response?.data?.message ??
       error.response?.data?.error ??
@@ -71,23 +75,23 @@ function handlePhotoChange(event: Event) {
   <main class="auth-split">
     <section class="auth-info">
       <div class="auth-info-content">
-        <h2>Únete a la revolución dental</h2>
+        <h2>Únete a Dentia</h2>
         <p>
-          Crea una cuenta para encontrar dentistas, agendar citas y consultar tu
-          historial desde un solo lugar.
+          Crea tu cuenta con el flujo correcto para paciente o dentista usando
+          los datos disponibles del sistema.
         </p>
 
         <ul>
-          <li>Encuentra dentistas afiliados</li>
-          <li>Agenda sin llamadas</li>
-          <li>Consulta recetas e indicaciones</li>
-          <li>Accede a tus archivos clínicos</li>
+          <li>Pacientes con historial, archivos y citas</li>
+          <li>Dentistas con perfil profesional verificable</li>
+          <li>Correo verificado antes de iniciar sesión</li>
+          <li>Foto de perfil para identificarte dentro de la clínica</li>
         </ul>
       </div>
     </section>
 
     <section class="auth-form-area">
-      <div class="auth-card">
+      <div class="auth-card register-card">
         <div class="auth-brand">
           <AppLogo size="lg" />
           <h1>Crear cuenta</h1>
@@ -95,65 +99,91 @@ function handlePhotoChange(event: Event) {
         </div>
 
         <form @submit.prevent="handleRegister">
-          <label>
-            Tipo de cuenta
-            <select v-model="role" required>
-              <option value="PATIENT">Paciente</option>
-              <option value="DENTIST">Dentista</option>
-            </select>
-          </label>
+          <div class="segmented-control" role="radiogroup" aria-label="Tipo de cuenta">
+            <button
+              type="button"
+              :class="{ active: role === 'PATIENT' }"
+              @click="role = 'PATIENT'"
+            >
+              Paciente
+            </button>
+            <button
+              type="button"
+              :class="{ active: role === 'DENTIST' }"
+              @click="role = 'DENTIST'"
+            >
+              Dentista
+            </button>
+          </div>
 
-          <label>
-            Nombre completo
-            <input v-model="fullName" type="text" required minlength="3" />
-          </label>
+          <fieldset class="form-section">
+            <legend>Acceso</legend>
 
-          <label>
-            Correo electrónico
-            <input v-model="email" type="email" required />
-          </label>
+            <label>
+              Nombre completo
+              <input v-model="fullName" type="text" required minlength="3" />
+            </label>
 
-          <label>
-            Contraseña
-            <input v-model="password" type="password" required minlength="8" />
-          </label>
+            <label>
+              Correo electrónico
+              <input v-model="email" type="email" required />
+            </label>
 
-          <label v-if="role === 'DENTIST'">
-            Cedula profesional
-            <input
-              v-model="cedulaProfesional"
-              type="text"
-              inputmode="numeric"
-              required
-              minlength="7"
-              maxlength="8"
-            />
-          </label>
+            <label>
+              Contraseña
+              <input v-model="password" type="password" required minlength="8" />
+            </label>
+          </fieldset>
 
-          <label v-if="role === 'DENTIST'">
-            Escuela de egreso
-            <input v-model="escuela" type="text" required minlength="3" />
-          </label>
+          <fieldset v-if="role === 'DENTIST'" class="form-section">
+            <legend>{{ roleTitle }}</legend>
 
-          <label v-if="role === 'DENTIST'">
-            Descripcion profesional
-            <textarea
-              v-model="descripcion"
-              required
-              minlength="10"
-              rows="4"
-            />
-          </label>
+            <label>
+              Especialidad
+              <input v-model="specialty" type="text" placeholder="Odontología general" />
+            </label>
 
-          <label>
-            Foto de perfil
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              :required="role === 'DENTIST'"
-              @change="handlePhotoChange"
-            />
-          </label>
+            <label>
+              Cédula profesional
+              <input
+                v-model="cedulaProfesional"
+                type="text"
+                inputmode="numeric"
+                required
+                minlength="7"
+                maxlength="8"
+              />
+            </label>
+
+            <label>
+              Escuela de egreso
+              <input v-model="escuela" type="text" required minlength="3" />
+            </label>
+
+            <label>
+              Descripción profesional
+              <textarea
+                v-model="descripcion"
+                required
+                minlength="10"
+                rows="4"
+              />
+            </label>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend>Foto de perfil</legend>
+
+            <label>
+              Imagen
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                :required="role === 'DENTIST'"
+                @change="handlePhotoChange"
+              />
+            </label>
+          </fieldset>
 
           <p v-if="errorMessage" class="error-message">
             {{ errorMessage }}

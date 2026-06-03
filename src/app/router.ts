@@ -11,6 +11,8 @@ import AdminDashboardPage from '../pages/AdminDashboardPage.vue'
 import PatientAppointmentsPage from '../pages/PatientAppointmentsPage.vue'
 import PatientHistoryPage from '../pages/PatientHistoryPage.vue'
 import DentistAgendaPage from '../pages/DentistAgendaPage.vue'
+import ChatPage from '../pages/ChatPage.vue'
+import ProfilePage from '../pages/ProfilePage.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -68,6 +70,16 @@ export const router = createRouter({
       path: '/dentist/agenda',
       component: DentistAgendaPage,
       meta: { requiresAuth: true, roles: ['DENTIST'] },
+    },
+    {
+      path: '/chat',
+      component: ChatPage,
+      meta: { requiresAuth: true, roles: ['PATIENT', 'DENTIST', 'ADMIN'] },
+    },
+    {
+      path: '/profile',
+      component: ProfilePage,
+      meta: { requiresAuth: true },
     },
   ],
 })

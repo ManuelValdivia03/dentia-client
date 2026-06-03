@@ -1,17 +1,4 @@
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000',
-  timeout: 10000,
-})
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('dentia_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
+import { api } from '../../app/api'
 
 export type AppointmentStatus =
   | 'PENDING'
@@ -32,7 +19,7 @@ export interface Appointment {
 }
 
 export interface CreateAppointmentPayload {
-  patientId: string
+  patientId?: string
   dentistId: string
   startAt: string
   endAt: string
@@ -40,13 +27,63 @@ export interface CreateAppointmentPayload {
   notes?: string
 }
 
+export interface RescheduleAppointmentPayload {
+  id: string
+  startAt: string
+  endAt: string
+}
+
+export interface AppointmentAvailabilitySlot {
+  startAt?: string
+  endAt?: string
+  available?: boolean
+  label?: string
+}
+
+export interface CreateRatingPayload {
+  appointmentId: string
+  score: number
+  comment?: string
+}
+
 export async function getAppointments() {
   const { data } = await api.get<Appointment[]>('/appointments')
   return data
 }
 
+export async function getAppointment(id: string) {
+  const { data } = await api.get<Appointment>(`/appointments/${id}`)
+  return data
+}
+
+export async function getAppointmentAvailability(
+  dentistId: string,
+  date: string,
+) {
+  const { data } = await api.get<AppointmentAvailabilitySlot[] | unknown>(
+    '/appointments/availability',
+    {
+      params: { dentistId, date },
+    },
+  )
+
+  return data
+}
+
 export async function createAppointment(payload: CreateAppointmentPayload) {
   const { data } = await api.post<Appointment>('/appointments', payload)
+  return data
+}
+
+export async function rescheduleAppointment({
+  id,
+  startAt,
+  endAt,
+}: RescheduleAppointmentPayload) {
+  const { data } = await api.patch<Appointment>(
+    `/appointments/${id}/reschedule`,
+    { startAt, endAt },
+  )
   return data
 }
 
@@ -62,5 +99,17 @@ export async function confirmAppointment(id: string) {
 
 export async function completeAppointment(id: string) {
   const { data } = await api.patch<Appointment>(`/appointments/${id}/complete`)
+  return data
+}
+
+export async function rateAppointment({
+  appointmentId,
+  score,
+  comment,
+}: CreateRatingPayload) {
+  const { data } = await api.post(`/appointments/${appointmentId}/rating`, {
+    score,
+    comment,
+  })
   return data
 }

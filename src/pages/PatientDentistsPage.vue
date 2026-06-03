@@ -1,52 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
+import { computed, ref, watch } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
-import { createAppointment } from '../modules/appointments/appointments.api'
-import axios from 'axios'
+import {
+  createAppointment,
+  getAppointmentAvailability,
+} from '../modules/appointments/appointments.api'
+import {
+  getDentistRatingsSummary,
+  getDentists,
+} from '../modules/dentists/dentists.service'
+import type { Dentist } from '../modules/dentists/dentists.types'
 
-interface Dentist {
-  id?: string
-  domainId: string
-  fullName?: string
-  name?: string
-  email?: string
-  specialty?: string
-}
-
-interface StoredUser {
-  domainId?: string
-  role?: string
-  email?: string
-  fullName?: string
-}
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000',
-  timeout: 10000,
-})
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('dentia_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
-
-async function fetchDentists() {
-  const { data } = await api.get<Dentist[]>('/dentists')
-  return data
-}
-
-function getCurrentUser(): StoredUser | null {
-  const raw = localStorage.getItem('dentia_user')
-  if (!raw) return null
-
-  try {
-    return JSON.parse(raw) as StoredUser
-  } catch {
-    return null
-  }
-}
+const queryClient = useQueryClient()
 
 const search = ref('')
 const selectedDentist = ref<Dentist | null>(null)
@@ -60,12 +26,20 @@ const formSuccess = ref('')
 
 const dentistsQuery = useQuery({
   queryKey: ['dentists'],
-  queryFn: fetchDentists,
+  queryFn: getDentists,
 })
 
-function dentistName(dentist: Dentist) {
-  return dentist.fullName ?? dentist.name ?? dentist.email ?? 'Dentista sin nombre'
-}
+const availabilityQuery = useQuery({
+  queryKey: ['appointments', 'availability', computed(() => selectedDentist.value?.domainId), appointmentDate],
+  queryFn: () => getAppointmentAvailability(selectedDentist.value!.domainId, appointmentDate.value),
+  enabled: computed(() => Boolean(selectedDentist.value?.domainId && appointmentDate.value)),
+})
+
+const ratingsQuery = useQuery({
+  queryKey: ['dentists', 'ratings', computed(() => selectedDentist.value?.domainId)],
+  queryFn: () => getDentistRatingsSummary(selectedDentist.value!.domainId),
+  enabled: computed(() => Boolean(selectedDentist.value?.domainId)),
+})
 
 const filteredDentists = computed(() => {
   const dentists = dentistsQuery.data.value ?? []
@@ -79,6 +53,39 @@ const filteredDentists = computed(() => {
     return name.includes(term) || specialty.includes(term)
   })
 })
+
+const availabilitySlots = computed(() => {
+  const value = availabilityQuery.data.value
+
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (value && typeof value === 'object' && 'slots' in value) {
+    const slots = (value as { slots?: unknown }).slots
+    return Array.isArray(slots) ? slots : []
+  }
+
+  return []
+})
+
+const ratingAverage = computed(() => {
+  const summary = ratingsQuery.data.value
+  return summary?.averageScore ?? summary?.average ?? 0
+})
+
+const ratingTotal = computed(() => {
+  const summary = ratingsQuery.data.value
+  return summary?.totalRatings ?? summary?.ratingsCount ?? summary?.total ?? 0
+})
+
+watch(appointmentDate, () => {
+  appointmentTime.value = ''
+})
+
+function dentistName(dentist: Dentist) {
+  return dentist.fullName ?? dentist.name ?? dentist.email ?? 'Dentista sin nombre'
+}
 
 function openSchedule(dentist: Dentist) {
   selectedDentist.value = dentist
@@ -94,6 +101,30 @@ function closeSchedule() {
   selectedDentist.value = null
 }
 
+function slotLabel(slot: unknown) {
+  if (typeof slot === 'string') return slot
+
+  const value = slot as { startAt?: string; endAt?: string; label?: string }
+
+  if (value.label) return value.label
+  if (!value.startAt) return 'Horario disponible'
+
+  return new Date(value.startAt).toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function slotTime(slot: unknown) {
+  if (typeof slot === 'string') return slot
+
+  const value = slot as { startAt?: string }
+  if (!value.startAt) return ''
+
+  const date = new Date(value.startAt)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
 async function submitAppointment() {
   formError.value = ''
   formSuccess.value = ''
@@ -105,14 +136,6 @@ async function submitAppointment() {
     return
   }
 
-  const currentUser = getCurrentUser()
-  const patientId = currentUser?.domainId
-
-  if (!patientId) {
-    formError.value = 'No se encontró el identificador del paciente.'
-    return
-  }
-
   const start = new Date(`${appointmentDate.value}T${appointmentTime.value}:00`)
   const end = new Date(start.getTime() + 60 * 60 * 1000)
 
@@ -120,7 +143,6 @@ async function submitAppointment() {
 
   try {
     await createAppointment({
-      patientId,
       dentistId: selectedDentist.value.domainId,
       startAt: start.toISOString(),
       endAt: end.toISOString(),
@@ -129,8 +151,8 @@ async function submitAppointment() {
     })
 
     formSuccess.value = 'Cita agendada correctamente.'
+    queryClient.invalidateQueries({ queryKey: ['appointments'] })
   } catch (error: any) {
-    console.error('Create appointment error:', error.response?.data ?? error)
     const message = error.response?.data?.message ?? error.response?.data?.error
     formError.value = typeof message === 'string' ? message : 'No se pudo agendar la cita.'
   } finally {
@@ -196,14 +218,17 @@ async function submitAppointment() {
       No hay dentistas disponibles con ese filtro.
     </div>
 
-    <div v-if="selectedDentist" class="card" style="margin-top: 24px">
-      <div class="page-header">
+    <div v-if="selectedDentist" class="card section-card">
+      <div class="page-header compact-header">
         <div>
           <p class="eyebrow">Nueva cita</p>
           <h2>{{ dentistName(selectedDentist) }}</h2>
+          <p class="muted-text">
+            {{ ratingAverage.toFixed(1) }} / 5 · {{ ratingTotal }} valoraciones
+          </p>
         </div>
 
-        <button class="secondary-button" type="button" @click="closeSchedule">
+        <button class="secondary-button inline-button" type="button" @click="closeSchedule">
           Cerrar
         </button>
       </div>
@@ -214,9 +239,23 @@ async function submitAppointment() {
           <input v-model="appointmentDate" type="date" required />
         </label>
 
-        <label>
+        <label v-if="availabilitySlots.length">
           Hora
-          <input v-model="appointmentTime" type="time" required />
+          <select v-model="appointmentTime" :disabled="!appointmentDate">
+            <option value="">Selecciona un horario</option>
+            <option
+              v-for="slot in availabilitySlots"
+              :key="slotLabel(slot)"
+              :value="slotTime(slot)"
+            >
+              {{ slotLabel(slot) }}
+            </option>
+          </select>
+        </label>
+
+        <label v-else>
+          Hora
+          <input v-model="appointmentTime" type="time" :disabled="!appointmentDate" required />
         </label>
 
         <label>
@@ -229,6 +268,9 @@ async function submitAppointment() {
           <textarea v-model="notes" rows="3" placeholder="Notas opcionales" />
         </label>
 
+        <p v-if="availabilityQuery.isError.value" class="error-message">
+          No se pudo consultar disponibilidad; puedes elegir fecha y volver a intentar.
+        </p>
         <p v-if="formError" class="error-message">{{ formError }}</p>
         <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>
 
