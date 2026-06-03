@@ -21,6 +21,7 @@ const prescriptionTarget = ref<Appointment | null>(null)
 const diagnosis = ref('')
 const indications = ref('')
 const prescriptionNotes = ref('')
+const appointmentActionErrors = ref<Record<string, string>>({})
 
 const appointmentsQuery = useQuery({
   queryKey: ['appointments'],
@@ -175,10 +176,19 @@ function canConfirm(appointment: Appointment) {
 }
 
 function canComplete(appointment: Appointment) {
-  return (
-    normalizeStatus(appointment.status) === 'CONFIRMED' &&
-    new Date(appointment.startAt).getTime() <= Date.now()
-  )
+  return normalizeStatus(appointment.status) === 'CONFIRMED'
+}
+
+function canCompleteNow(appointment: Appointment) {
+  return new Date(appointment.startAt).getTime() <= Date.now()
+}
+
+function completionBlockedMessage(appointment: Appointment) {
+  if (normalizeStatus(appointment.status) !== 'CONFIRMED' || canCompleteNow(appointment)) {
+    return ''
+  }
+
+  return `Podrás completarla a partir de ${formatTime(appointment.startAt)}.`
 }
 
 function canCancel(appointment: Appointment) {
@@ -191,21 +201,60 @@ function canPrescribe(appointment: Appointment) {
 }
 
 async function handleConfirm(id: string) {
+  clearActionError(id)
   await confirmMutation.mutateAsync(id)
 }
 
-async function handleComplete(id: string) {
+async function handleComplete(appointment: Appointment) {
+  clearActionError(appointment.id)
+
+  if (!canCompleteNow(appointment)) {
+    setActionError(appointment.id, completionBlockedMessage(appointment))
+    return
+  }
+
   const confirmed = window.confirm('¿Marcar esta cita como completada?')
   if (!confirmed) return
 
-  await completeMutation.mutateAsync(id)
+  try {
+    await completeMutation.mutateAsync(appointment.id)
+  } catch (error) {
+    setActionError(appointment.id, getActionErrorMessage(error))
+  }
 }
 
 async function handleCancel(id: string) {
+  clearActionError(id)
   const confirmed = window.confirm('¿Cancelar esta cita?')
   if (!confirmed) return
 
   await cancelMutation.mutateAsync(id)
+}
+
+function setActionError(appointmentId: string, message: string) {
+  appointmentActionErrors.value = {
+    ...appointmentActionErrors.value,
+    [appointmentId]: message,
+  }
+}
+
+function clearActionError(appointmentId: string) {
+  const nextErrors = { ...appointmentActionErrors.value }
+  delete nextErrors[appointmentId]
+  appointmentActionErrors.value = nextErrors
+}
+
+function getActionErrorMessage(error: unknown) {
+  const message =
+    typeof error === 'object' && error && 'response' in error
+      ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+      : undefined
+
+  if (message === 'Appointment cannot be completed before its start time') {
+    return 'Todavía no puedes completar esta cita porque aún no llega su fecha y hora.'
+  }
+
+  return message ?? 'No se pudo completar la cita. Intenta de nuevo.'
 }
 
 function isBusy() {
@@ -299,6 +348,13 @@ async function submitPrescription() {
                 {{ appointment.notes }}
               </p>
 
+              <p
+                v-if="completionBlockedMessage(appointment) || appointmentActionErrors[appointment.id]"
+                class="error-message"
+              >
+                {{ appointmentActionErrors[appointment.id] || completionBlockedMessage(appointment) }}
+              </p>
+
               <div class="card-actions">
                 <button
                   v-if="canConfirm(appointment)"
@@ -315,7 +371,7 @@ async function submitPrescription() {
                   class="primary-button inline-button"
                   type="button"
                   :disabled="isBusy()"
-                  @click="handleComplete(appointment.id)"
+                  @click="handleComplete(appointment)"
                 >
                   Completar
                 </button>
