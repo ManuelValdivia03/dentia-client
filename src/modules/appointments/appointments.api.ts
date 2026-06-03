@@ -31,6 +31,8 @@ export interface RescheduleAppointmentPayload {
   id: string
   startAt: string
   endAt: string
+  reason?: string
+  notes?: string
 }
 
 export interface AppointmentAvailabilitySlot {
@@ -79,10 +81,12 @@ export async function rescheduleAppointment({
   id,
   startAt,
   endAt,
+  reason,
+  notes,
 }: RescheduleAppointmentPayload) {
   const { data } = await api.patch<Appointment>(
     `/appointments/${id}/reschedule`,
-    { startAt, endAt },
+    { startAt, endAt, reason, notes },
   )
   return data
 }

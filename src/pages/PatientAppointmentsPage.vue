@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import {
   cancelAppointment,
+  getAppointmentAvailability,
   getAppointments,
   rateAppointment,
   rescheduleAppointment,
@@ -17,6 +18,8 @@ const queryClient = useQueryClient()
 const rescheduleTarget = ref<Appointment | null>(null)
 const rescheduleDate = ref('')
 const rescheduleTime = ref('')
+const rescheduleReason = ref('')
+const rescheduleNotes = ref('')
 const ratingTarget = ref<Appointment | null>(null)
 const ratingScore = ref(5)
 const ratingComment = ref('')
@@ -24,6 +27,9 @@ const today = getLocalDateValue()
 const rescheduleError = ref('')
 const rescheduleMinTime = computed(
   () => (rescheduleDate.value === today ? getLocalTimeValue() : undefined),
+)
+const isRescheduleDatePast = computed(
+  () => Boolean(rescheduleDate.value) && isBeforeToday(rescheduleDate.value),
 )
 
 const appointmentsQuery = useQuery({
@@ -34,6 +40,25 @@ const appointmentsQuery = useQuery({
 const dentistsQuery = useQuery({
   queryKey: ['dentists'],
   queryFn: getDentists,
+})
+
+const rescheduleAvailabilityQuery = useQuery({
+  queryKey: [
+    'appointments',
+    'availability',
+    computed(() => rescheduleTarget.value?.dentistId),
+    rescheduleDate,
+  ],
+  queryFn: () =>
+    getAppointmentAvailability(
+      rescheduleTarget.value!.dentistId,
+      rescheduleDate.value,
+    ),
+  enabled: computed(
+    () =>
+      Boolean(rescheduleTarget.value?.dentistId && rescheduleDate.value) &&
+      !isRescheduleDatePast.value,
+  ),
 })
 
 const appointmentGroups = computed(() => {
@@ -49,6 +74,24 @@ const dentistNameById = computed(() => {
   )
 })
 
+const rescheduleAvailabilitySlots = computed(() => {
+  const value = rescheduleAvailabilityQuery.data.value
+  const now = Date.now()
+
+  if (Array.isArray(value)) {
+    return value.filter((slot) => !isPastSlot(slot, now))
+  }
+
+  if (value && typeof value === 'object' && 'slots' in value) {
+    const slots = (value as { slots?: unknown }).slots
+    return Array.isArray(slots)
+      ? slots.filter((slot) => !isPastSlot(slot, now))
+      : []
+  }
+
+  return []
+})
+
 const cancelMutation = useMutation({
   mutationFn: cancelAppointment,
   onSuccess: () => {
@@ -60,6 +103,8 @@ const rescheduleMutation = useMutation({
   mutationFn: rescheduleAppointment,
   onSuccess: () => {
     rescheduleTarget.value = null
+    rescheduleReason.value = ''
+    rescheduleNotes.value = ''
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
   },
 })
@@ -187,6 +232,43 @@ function isSelectedTimePast(date: string, time: string) {
   return Number.isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now()
 }
 
+function slotLabel(slot: unknown) {
+  if (typeof slot === 'string') return slot
+
+  const value = slot as { startAt?: string; label?: string }
+
+  if (value.label) return value.label
+  if (!value.startAt) return 'Horario disponible'
+
+  return new Date(value.startAt).toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function slotTime(slot: unknown) {
+  if (typeof slot === 'string') return slot
+
+  const value = slot as { startAt?: string }
+  if (!value.startAt) return ''
+
+  const date = new Date(value.startAt)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function isPastSlot(slot: unknown, now = Date.now()) {
+  if (typeof slot === 'string') {
+    if (!rescheduleDate.value) return false
+    return new Date(`${rescheduleDate.value}T${slot}:00`).getTime() <= now
+  }
+
+  const value = slot as { startAt?: string; available?: boolean }
+  if (value.available === false) return true
+  if (!value.startAt) return false
+
+  return new Date(value.startAt).getTime() <= now
+}
+
 function canCancel(appointment: Appointment) {
   const status = normalizeStatus(appointment.status)
   return status !== 'CANCELLED' && status !== 'COMPLETED'
@@ -214,10 +296,22 @@ async function handleCancel(id: string) {
 function openReschedule(appointment: Appointment) {
   rescheduleTarget.value = appointment
   const date = new Date(appointment.startAt)
-  rescheduleDate.value = date.toISOString().slice(0, 10)
+  rescheduleDate.value = getLocalDateValue(date)
   rescheduleTime.value = `${String(date.getHours()).padStart(2, '0')}:${String(
     date.getMinutes(),
   ).padStart(2, '0')}`
+  rescheduleReason.value = appointment.reason ?? ''
+  rescheduleNotes.value = appointment.notes ?? ''
+  rescheduleError.value = ''
+}
+
+function closeReschedule() {
+  rescheduleTarget.value = null
+  rescheduleDate.value = ''
+  rescheduleTime.value = ''
+  rescheduleReason.value = ''
+  rescheduleNotes.value = ''
+  rescheduleError.value = ''
 }
 
 async function submitReschedule() {
@@ -245,6 +339,8 @@ async function submitReschedule() {
       id: rescheduleTarget.value.id,
       startAt: start.toISOString(),
       endAt: end.toISOString(),
+      reason: rescheduleReason.value || undefined,
+      notes: rescheduleNotes.value || undefined,
     })
   } catch (error: any) {
     const message = error.response?.data?.message ?? error.response?.data?.error
@@ -375,31 +471,64 @@ async function submitRating() {
       Todavía no tienes citas agendadas.
     </div>
 
-    <div v-if="rescheduleTarget" class="card section-card">
-      <div class="page-header compact-header">
-        <div>
-          <p class="eyebrow">Reprogramar</p>
-          <h2>{{ rescheduleTarget.reason ?? 'Cita odontológica' }}</h2>
+    <div v-if="rescheduleTarget" class="modal-backdrop" @click.self="closeReschedule">
+      <section class="modal-panel appointment-modal-panel" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Reprogramar</p>
+            <h2>{{ dentistDisplayName(rescheduleTarget.dentistId) }}</h2>
+            <p class="muted-text">{{ rescheduleTarget.reason ?? 'Cita odontológica' }}</p>
+          </div>
+          <button class="secondary-button inline-button" type="button" @click="closeReschedule">
+            Cerrar
+          </button>
         </div>
-        <button class="secondary-button inline-button" type="button" @click="rescheduleTarget = null">
-          Cerrar
-        </button>
-      </div>
 
-      <form @submit.prevent="submitReschedule">
+        <form @submit.prevent="submitReschedule">
         <label>
           Fecha
           <input v-model="rescheduleDate" type="date" :min="today" required />
         </label>
-        <label>
+        <label v-if="rescheduleAvailabilitySlots.length">
           Hora
-          <input v-model="rescheduleTime" type="time" :min="rescheduleMinTime" required />
+          <select v-model="rescheduleTime" :disabled="!rescheduleDate">
+            <option value="">Selecciona un horario</option>
+            <option
+              v-for="slot in rescheduleAvailabilitySlots"
+              :key="slotLabel(slot)"
+              :value="slotTime(slot)"
+            >
+              {{ slotLabel(slot) }}
+            </option>
+          </select>
         </label>
+        <label v-else>
+          Hora
+          <input
+            v-model="rescheduleTime"
+            type="time"
+            :disabled="!rescheduleDate"
+            :min="rescheduleMinTime"
+            required
+          />
+        </label>
+        <label>
+          Motivo
+          <input v-model="rescheduleReason" type="text" placeholder="Consulta general" />
+        </label>
+        <label>
+          Notas
+          <textarea v-model="rescheduleNotes" rows="3" placeholder="Notas opcionales" />
+        </label>
+        <p v-if="rescheduleAvailabilityQuery.isError.value" class="error-message">
+          No se pudo consultar disponibilidad; puedes elegir fecha y volver a intentar.
+        </p>
+        <p v-if="rescheduleError" class="error-message">{{ rescheduleError }}</p>
         <button class="primary-button" type="submit" :disabled="rescheduleMutation.isPending.value">
           Guardar cambio
         </button>
-        <p v-if="rescheduleError" class="error-message">{{ rescheduleError }}</p>
-      </form>
+        </form>
+      </section>
     </div>
 
     <div v-if="ratingTarget" class="card section-card">

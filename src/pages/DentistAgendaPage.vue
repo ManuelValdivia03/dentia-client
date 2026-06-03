@@ -175,7 +175,10 @@ function canConfirm(appointment: Appointment) {
 }
 
 function canComplete(appointment: Appointment) {
-  return normalizeStatus(appointment.status) === 'CONFIRMED'
+  return (
+    normalizeStatus(appointment.status) === 'CONFIRMED' &&
+    new Date(appointment.startAt).getTime() <= Date.now()
+  )
 }
 
 function canCancel(appointment: Appointment) {
