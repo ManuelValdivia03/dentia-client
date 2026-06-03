@@ -5,7 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import {
   createAppointment,
+  getAppointments,
   getAppointmentAvailability,
+  type Appointment,
 } from '../modules/appointments/appointments.api'
 import {
   getDentistRatingsSummary,
@@ -19,6 +21,7 @@ const router = useRouter()
 const search = ref('')
 const filtersOpen = ref(false)
 const specialtyFilter = ref('')
+const showDentistDirectory = ref(false)
 const selectedDentist = ref<Dentist | null>(null)
 const failedPhotoDentistIds = ref(new Set<string>())
 const appointmentDate = ref('')
@@ -41,6 +44,11 @@ const dentistsQuery = useQuery({
   queryFn: getDentists,
 })
 
+const appointmentsQuery = useQuery({
+  queryKey: ['appointments'],
+  queryFn: getAppointments,
+})
+
 const availabilityQuery = useQuery({
   queryKey: ['appointments', 'availability', computed(() => selectedDentist.value?.domainId), appointmentDate],
   queryFn: () => getAppointmentAvailability(selectedDentist.value!.domainId, appointmentDate.value),
@@ -58,7 +66,7 @@ const ratingsQuery = useQuery({
 })
 
 const filteredDentists = computed(() => {
-  const dentists = dentistsQuery.data.value ?? []
+  const dentists = visibleDirectoryDentists.value
   const term = search.value.trim().toLowerCase()
   const specialty = specialtyFilter.value.trim().toLowerCase()
 
@@ -71,6 +79,39 @@ const filteredDentists = computed(() => {
 
     return matchesSearch && matchesSpecialty
   })
+})
+
+const primaryDentistAppointment = computed(() => {
+  const appointments = appointmentsQuery.data.value ?? []
+  const relatedAppointments = appointments
+    .filter((appointment) => isPatientDentistRelation(appointment))
+    .sort((a, b) => {
+      return new Date(b.startAt).getTime() - new Date(a.startAt).getTime()
+    })
+
+  return relatedAppointments[0]
+})
+
+const primaryDentist = computed(() => {
+  const dentistId = primaryDentistAppointment.value?.dentistId
+  if (!dentistId) return null
+
+  return (dentistsQuery.data.value ?? []).find(
+    (dentist) => dentist.domainId === dentistId,
+  ) ?? null
+})
+
+const shouldShowDirectory = computed(() => {
+  return !primaryDentist.value || showDentistDirectory.value
+})
+
+const visibleDirectoryDentists = computed(() => {
+  const dentists = dentistsQuery.data.value ?? []
+  const primaryDentistId = primaryDentist.value?.domainId
+
+  if (!primaryDentistId) return dentists
+
+  return dentists.filter((dentist) => dentist.domainId !== primaryDentistId)
 })
 
 const specialtyOptions = computed(() => {
@@ -153,9 +194,23 @@ function openDentistDetail(dentist: Dentist) {
   router.push(`/patient/dentists/${dentist.domainId}`)
 }
 
+function isPatientDentistRelation(appointment: Appointment) {
+  const status = appointment.status.toUpperCase()
+  return status === 'CONFIRMED' || status === 'COMPLETED'
+}
+
 function clearFilters() {
   search.value = ''
   specialtyFilter.value = ''
+}
+
+function toggleDentistDirectory() {
+  showDentistDirectory.value = !showDentistDirectory.value
+
+  if (!showDentistDirectory.value) {
+    clearFilters()
+    filtersOpen.value = false
+  }
 }
 
 function openSchedule(dentist: Dentist) {
@@ -290,12 +345,45 @@ async function submitAppointment() {
       </div>
     </div>
 
-    <div class="toolbar">
+    <section v-if="primaryDentist" class="featured-dentist-card">
+      <div class="featured-dentist-photo">
+        <img
+          v-if="dentistPhotoUrl(primaryDentist)"
+          :src="dentistPhotoUrl(primaryDentist)"
+          :alt="`Foto de ${dentistName(primaryDentist)}`"
+          @error="handleDentistPhotoError(primaryDentist)"
+        />
+        <span v-else>{{ dentistName(primaryDentist).charAt(0).toUpperCase() }}</span>
+      </div>
+
+      <div class="featured-dentist-info">
+        <p class="eyebrow">Tu dentista</p>
+        <h3>{{ dentistName(primaryDentist) }}</h3>
+        <p>{{ primaryDentist.specialty ?? 'Odontología general' }}</p>
+        <p v-if="primaryDentist.descripcion" class="featured-dentist-description">
+          {{ primaryDentist.descripcion }}
+        </p>
+
+        <div class="row-actions">
+          <button class="primary-button inline-button" type="button" @click="openSchedule(primaryDentist)">
+            Agendar seguimiento
+          </button>
+          <button class="secondary-button inline-button" type="button" @click="openDentistDetail(primaryDentist)">
+            Ver perfil
+          </button>
+          <button class="secondary-button inline-button" type="button" @click="toggleDentistDirectory">
+            {{ showDentistDirectory ? 'Ocultar cambio' : 'Cambiar dentista' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div v-if="shouldShowDirectory" class="toolbar">
       <input
         v-model="search"
         class="search-input"
         type="search"
-        placeholder="Buscar por nombre o especialidad"
+        :placeholder="primaryDentist ? 'Buscar otro dentista' : 'Buscar por nombre o especialidad'"
       />
 
       <button
@@ -309,7 +397,7 @@ async function submitAppointment() {
       </button>
     </div>
 
-    <div v-if="filtersOpen" id="dentist-filters" class="filter-panel">
+    <div v-if="shouldShowDirectory && filtersOpen" id="dentist-filters" class="filter-panel">
       <label>
         Especialidad
         <select v-model="specialtyFilter">
@@ -340,7 +428,7 @@ async function submitAppointment() {
       No se pudieron cargar los dentistas.
     </p>
 
-    <div v-else-if="filteredDentists.length" class="cards-grid">
+    <div v-else-if="shouldShowDirectory && filteredDentists.length" class="cards-grid">
       <article
         v-for="dentist in filteredDentists"
         :key="dentist.domainId"
@@ -384,7 +472,7 @@ async function submitAppointment() {
       </article>
     </div>
 
-    <div v-else class="empty-state">
+    <div v-else-if="shouldShowDirectory" class="empty-state">
       No hay dentistas disponibles con ese filtro.
     </div>
 

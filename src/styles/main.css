@@ -458,6 +458,58 @@ textarea:focus {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
+.featured-dentist-card {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 22px;
+  align-items: center;
+  margin-bottom: 22px;
+  padding: 22px;
+  border: 1px solid #cfe7ef;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 14px 34px rgba(15, 93, 126, 0.09);
+}
+
+.featured-dentist-photo {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 42px;
+  font-weight: 900;
+  border: 5px solid #d8eef3;
+}
+
+.featured-dentist-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.featured-dentist-info {
+  min-width: 0;
+}
+
+.featured-dentist-info h3 {
+  margin: 4px 0 0;
+  font-size: 28px;
+}
+
+.featured-dentist-info p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.featured-dentist-description {
+  max-width: 680px;
+}
+
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -1048,6 +1100,16 @@ textarea:focus {
 
   .filter-panel {
     grid-template-columns: 1fr;
+  }
+
+  .featured-dentist-card {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .featured-dentist-info .row-actions {
+    justify-content: center;
   }
 
   .agenda-day-header,
