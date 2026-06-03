@@ -23,9 +23,12 @@ const notes = ref('')
 const isCreating = ref(false)
 const formError = ref('')
 const formSuccess = ref('')
-const today = new Date().toISOString().slice(0, 10)
+const today = getLocalDateValue()
 const isAppointmentDatePast = computed(
-  () => Boolean(appointmentDate.value) && appointmentDate.value < today,
+  () => Boolean(appointmentDate.value) && isBeforeToday(appointmentDate.value),
+)
+const appointmentMinTime = computed(
+  () => (appointmentDate.value === today ? getLocalTimeValue() : undefined),
 )
 
 const dentistsQuery = useQuery({
@@ -90,8 +93,19 @@ const ratingTotal = computed(() => {
   return summary?.totalRatings ?? summary?.ratingsCount ?? summary?.total ?? 0
 })
 
-watch(appointmentDate, () => {
+watch(appointmentDate, (date) => {
+  formError.value = ''
   appointmentTime.value = ''
+
+  if (date && isBeforeToday(date)) {
+    appointmentDate.value = today
+  }
+})
+
+watch(appointmentTime, (time) => {
+  if (time && isSelectedTimePast(appointmentDate.value, time)) {
+    appointmentTime.value = ''
+  }
 })
 
 function dentistName(dentist: Dentist) {
@@ -110,6 +124,29 @@ function openSchedule(dentist: Dentist) {
 
 function closeSchedule() {
   selectedDentist.value = null
+}
+
+function getLocalDateValue(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function getLocalTimeValue(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function isBeforeToday(date: string) {
+  return date < getLocalDateValue()
+}
+
+function isSelectedTimePast(date: string, time: string) {
+  if (!date || !time) return false
+
+  const selectedDate = new Date(`${date}T${time}:00`)
+  return Number.isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now()
 }
 
 function slotLabel(slot: unknown) {
@@ -161,15 +198,15 @@ async function submitAppointment() {
   }
 
   if (isAppointmentDatePast.value) {
-    formError.value = 'No puedes agendar citas en fechas pasadas.'
+    formError.value = 'Elige una fecha a partir de hoy.'
     return
   }
 
   const start = new Date(`${appointmentDate.value}T${appointmentTime.value}:00`)
   const end = new Date(start.getTime() + 60 * 60 * 1000)
 
-  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
-    formError.value = 'Selecciona una fecha y hora futuras.'
+  if (isSelectedTimePast(appointmentDate.value, appointmentTime.value)) {
+    formError.value = 'Elige una hora posterior al momento actual.'
     return
   }
 
@@ -188,7 +225,10 @@ async function submitAppointment() {
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
   } catch (error: any) {
     const message = error.response?.data?.message ?? error.response?.data?.error
-    formError.value = typeof message === 'string' ? message : 'No se pudo agendar la cita.'
+    formError.value =
+      typeof message === 'string' && message.includes('startAt must be in the future')
+        ? 'Elige una fecha y hora posteriores al momento actual.'
+        : 'No se pudo agendar la cita. Revisa la fecha y la disponibilidad.'
   } finally {
     isCreating.value = false
   }
@@ -289,7 +329,13 @@ async function submitAppointment() {
 
         <label v-else>
           Hora
-          <input v-model="appointmentTime" type="time" :disabled="!appointmentDate" required />
+          <input
+            v-model="appointmentTime"
+            type="time"
+            :disabled="!appointmentDate"
+            :min="appointmentMinTime"
+            required
+          />
         </label>
 
         <label>
@@ -304,9 +350,6 @@ async function submitAppointment() {
 
         <p v-if="availabilityQuery.isError.value" class="error-message">
           No se pudo consultar disponibilidad; puedes elegir fecha y volver a intentar.
-        </p>
-        <p v-if="isAppointmentDatePast" class="error-message">
-          No puedes agendar citas en fechas pasadas.
         </p>
         <p v-if="formError" class="error-message">{{ formError }}</p>
         <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>

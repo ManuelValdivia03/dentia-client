@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import {
@@ -18,8 +18,11 @@ const rescheduleTime = ref('')
 const ratingTarget = ref<Appointment | null>(null)
 const ratingScore = ref(5)
 const ratingComment = ref('')
-const today = new Date().toISOString().slice(0, 10)
+const today = getLocalDateValue()
 const rescheduleError = ref('')
+const rescheduleMinTime = computed(
+  () => (rescheduleDate.value === today ? getLocalTimeValue() : undefined),
+)
 
 const appointmentsQuery = useQuery({
   queryKey: ['appointments'],
@@ -49,6 +52,21 @@ const ratingMutation = useMutation({
   },
 })
 
+watch(rescheduleDate, (date) => {
+  rescheduleError.value = ''
+  rescheduleTime.value = ''
+
+  if (date && isBeforeToday(date)) {
+    rescheduleDate.value = today
+  }
+})
+
+watch(rescheduleTime, (time) => {
+  if (time && isSelectedTimePast(rescheduleDate.value, time)) {
+    rescheduleTime.value = ''
+  }
+})
+
 function normalizeStatus(status: string) {
   return status.toUpperCase()
 }
@@ -69,6 +87,29 @@ function formatDate(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   })
+}
+
+function getLocalDateValue(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function getLocalTimeValue(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function isBeforeToday(date: string) {
+  return date < getLocalDateValue()
+}
+
+function isSelectedTimePast(date: string, time: string) {
+  if (!date || !time) return false
+
+  const selectedDate = new Date(`${date}T${time}:00`)
+  return Number.isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now()
 }
 
 function canCancel(appointment: Appointment) {
@@ -111,24 +152,32 @@ async function submitReschedule() {
     return
   }
 
-  if (rescheduleDate.value < today) {
-    rescheduleError.value = 'No puedes reprogramar citas en fechas pasadas.'
+  if (isBeforeToday(rescheduleDate.value)) {
+    rescheduleError.value = 'Elige una fecha a partir de hoy.'
     return
   }
 
   const start = new Date(`${rescheduleDate.value}T${rescheduleTime.value}:00`)
   const end = new Date(start.getTime() + 60 * 60 * 1000)
 
-  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
-    rescheduleError.value = 'Selecciona una fecha y hora futuras.'
+  if (isSelectedTimePast(rescheduleDate.value, rescheduleTime.value)) {
+    rescheduleError.value = 'Elige una hora posterior al momento actual.'
     return
   }
 
-  await rescheduleMutation.mutateAsync({
-    id: rescheduleTarget.value.id,
-    startAt: start.toISOString(),
-    endAt: end.toISOString(),
-  })
+  try {
+    await rescheduleMutation.mutateAsync({
+      id: rescheduleTarget.value.id,
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+    })
+  } catch (error: any) {
+    const message = error.response?.data?.message ?? error.response?.data?.error
+    rescheduleError.value =
+      typeof message === 'string' && message.includes('startAt must be in the future')
+        ? 'Elige una fecha y hora posteriores al momento actual.'
+        : 'No se pudo reprogramar la cita. Revisa la fecha y la disponibilidad.'
+  }
 }
 
 function openRating(appointment: Appointment) {
@@ -237,7 +286,7 @@ async function submitRating() {
         </label>
         <label>
           Hora
-          <input v-model="rescheduleTime" type="time" required />
+          <input v-model="rescheduleTime" type="time" :min="rescheduleMinTime" required />
         </label>
         <button class="primary-button" type="submit" :disabled="rescheduleMutation.isPending.value">
           Guardar cambio
