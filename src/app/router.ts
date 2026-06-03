@@ -3,6 +3,8 @@ import { useAuthStore } from '../stores/auth.store'
 
 import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
+import PatientRegisterPage from '../pages/PatientRegisterPage.vue'
+import DoctorRegisterPage from '../pages/DoctorRegisterPage.vue'
 import VerifyEmailPage from '../pages/VerifyEmailPage.vue'
 import DashboardRedirectPage from '../pages/DashboardRedirectPage.vue'
 import PatientDentistsPage from '../pages/PatientDentistsPage.vue'
@@ -29,6 +31,16 @@ export const router = createRouter({
     {
       path: '/register',
       component: RegisterPage,
+      meta: { public: true },
+    },
+    {
+      path: '/register/patient',
+      component: PatientRegisterPage,
+      meta: { public: true },
+    },
+    {
+      path: '/register/doctor',
+      component: DoctorRegisterPage,
       meta: { public: true },
     },
     {

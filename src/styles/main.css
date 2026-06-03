@@ -98,6 +98,10 @@ a {
   max-width: 560px;
 }
 
+.role-card {
+  max-width: 520px;
+}
+
 .auth-brand {
   text-align: center;
   margin-bottom: 30px;
@@ -175,6 +179,49 @@ fieldset {
 .segmented-control button.active {
   background: var(--primary);
   color: white;
+}
+
+.role-choice-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.role-choice-card {
+  min-height: 118px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 4px 14px;
+  align-items: center;
+  background: #fbfdff;
+}
+
+.role-choice-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.role-choice-icon {
+  width: 48px;
+  height: 48px;
+  grid-row: span 2;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+}
+
+.role-choice-card strong {
+  font-size: 18px;
+}
+
+.role-choice-card small {
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 label {
