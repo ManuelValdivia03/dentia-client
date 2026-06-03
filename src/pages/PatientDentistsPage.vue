@@ -17,6 +17,8 @@ const queryClient = useQueryClient()
 const router = useRouter()
 
 const search = ref('')
+const filtersOpen = ref(false)
+const specialtyFilter = ref('')
 const selectedDentist = ref<Dentist | null>(null)
 const failedPhotoDentistIds = ref(new Set<string>())
 const appointmentDate = ref('')
@@ -58,15 +60,30 @@ const ratingsQuery = useQuery({
 const filteredDentists = computed(() => {
   const dentists = dentistsQuery.data.value ?? []
   const term = search.value.trim().toLowerCase()
-
-  if (!term) return dentists
+  const specialty = specialtyFilter.value.trim().toLowerCase()
 
   return dentists.filter((dentist) => {
     const name = dentistName(dentist).toLowerCase()
-    const specialty = (dentist.specialty ?? '').toLowerCase()
-    return name.includes(term) || specialty.includes(term)
+    const dentistSpecialty = (dentist.specialty ?? '').toLowerCase()
+    const matchesSearch =
+      !term || name.includes(term) || dentistSpecialty.includes(term)
+    const matchesSpecialty = !specialty || dentistSpecialty === specialty
+
+    return matchesSearch && matchesSpecialty
   })
 })
+
+const specialtyOptions = computed(() => {
+  const specialties = new Set(
+    (dentistsQuery.data.value ?? [])
+      .map((dentist) => dentist.specialty?.trim())
+      .filter((specialty): specialty is string => Boolean(specialty)),
+  )
+
+  return [...specialties].sort((a, b) => a.localeCompare(b, 'es-MX'))
+})
+
+const hasActiveFilters = computed(() => Boolean(search.value || specialtyFilter.value))
 
 const availabilitySlots = computed(() => {
   const value = availabilityQuery.data.value
@@ -134,6 +151,11 @@ function handleDentistPhotoError(dentist: Dentist) {
 
 function openDentistDetail(dentist: Dentist) {
   router.push(`/patient/dentists/${dentist.domainId}`)
+}
+
+function clearFilters() {
+  search.value = ''
+  specialtyFilter.value = ''
 }
 
 function openSchedule(dentist: Dentist) {
@@ -275,6 +297,41 @@ async function submitAppointment() {
         type="search"
         placeholder="Buscar por nombre o especialidad"
       />
+
+      <button
+        class="secondary-button inline-button filter-toggle"
+        type="button"
+        :aria-expanded="filtersOpen"
+        aria-controls="dentist-filters"
+        @click="filtersOpen = !filtersOpen"
+      >
+        Filtros
+      </button>
+    </div>
+
+    <div v-if="filtersOpen" id="dentist-filters" class="filter-panel">
+      <label>
+        Especialidad
+        <select v-model="specialtyFilter">
+          <option value="">Todas las especialidades</option>
+          <option
+            v-for="specialty in specialtyOptions"
+            :key="specialty"
+            :value="specialty"
+          >
+            {{ specialty }}
+          </option>
+        </select>
+      </label>
+
+      <button
+        class="secondary-button inline-button"
+        type="button"
+        :disabled="!hasActiveFilters"
+        @click="clearFilters"
+      >
+        Limpiar filtros
+      </button>
     </div>
 
     <p v-if="dentistsQuery.isLoading.value">Cargando dentistas...</p>

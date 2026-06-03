@@ -434,10 +434,28 @@ textarea:focus {
   gap: 12px;
   align-items: center;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 
 .search-input {
   max-width: 360px;
+}
+
+.filter-toggle {
+  min-height: 46px;
+}
+
+.filter-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) auto;
+  gap: 14px;
+  align-items: end;
+  margin: -6px 0 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 .cards-grid {
@@ -1026,6 +1044,10 @@ textarea:focus {
 
   .list-item {
     display: grid;
+  }
+
+  .filter-panel {
+    grid-template-columns: 1fr;
   }
 
   .agenda-day-header,
