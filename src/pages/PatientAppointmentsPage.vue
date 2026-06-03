@@ -29,6 +29,10 @@ const appointmentsQuery = useQuery({
   queryFn: getAppointments,
 })
 
+const appointmentGroups = computed(() => {
+  return groupAppointmentsByDay(appointmentsQuery.data.value ?? [])
+})
+
 const cancelMutation = useMutation({
   mutationFn: cancelAppointment,
   onSuccess: () => {
@@ -82,11 +86,58 @@ function statusLabel(status: string) {
   return labels[normalizeStatus(status)] ?? status
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('es-MX', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+function statusClass(status: string) {
+  return `status-${normalizeStatus(status).toLowerCase()}`
+}
+
+function formatDay(value: string) {
+  return new Date(value).toLocaleDateString('es-MX', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   })
+}
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatTimeRange(appointment: Appointment) {
+  return `${formatTime(appointment.startAt)} - ${formatTime(appointment.endAt)}`
+}
+
+function groupAppointmentsByDay(appointments: Appointment[]) {
+  const sorted = [...appointments].sort((a, b) => {
+    return new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
+  })
+
+  return sorted.reduce<Array<{ key: string; label: string; appointments: Appointment[] }>>(
+    (groups, appointment) => {
+      const key = getLocalDateValue(new Date(appointment.startAt))
+      const existingGroup = groups.find((group) => group.key === key)
+
+      if (existingGroup) {
+        existingGroup.appointments.push(appointment)
+      } else {
+        groups.push({
+          key,
+          label: formatDay(appointment.startAt),
+          appointments: [appointment],
+        })
+      }
+
+      return groups
+    },
+    [],
+  )
+}
+
+function appointmentCountLabel(count: number) {
+  return count === 1 ? '1 cita' : `${count} citas`
 }
 
 function getLocalDateValue(date = new Date()) {
@@ -212,56 +263,88 @@ async function submitRating() {
       No se pudieron cargar tus citas.
     </p>
 
-    <div v-else-if="appointmentsQuery.data.value?.length" class="cards-grid">
-      <article
-        v-for="appointment in appointmentsQuery.data.value"
-        :key="appointment.id"
-        class="card"
+    <div v-else-if="appointmentGroups.length" class="agenda-board">
+      <section
+        v-for="group in appointmentGroups"
+        :key="group.key"
+        class="agenda-day"
       >
-        <div class="card-header">
+        <div class="agenda-day-header">
           <div>
-            <h3>{{ appointment.reason ?? 'Cita odontológica' }}</h3>
-            <p>{{ formatDate(appointment.startAt) }}</p>
+            <p class="eyebrow">Día</p>
+            <h3>{{ group.label }}</h3>
           </div>
-
-          <span class="badge">{{ statusLabel(appointment.status) }}</span>
+          <span class="agenda-count">{{ appointmentCountLabel(group.appointments.length) }}</span>
         </div>
 
-        <p><strong>Dentista:</strong> {{ appointment.dentistId }}</p>
-        <p v-if="appointment.notes"><strong>Notas:</strong> {{ appointment.notes }}</p>
-
-        <div class="card-actions">
-          <button
-            v-if="canReschedule(appointment)"
-            class="secondary-button inline-button"
-            type="button"
-            :disabled="rescheduleMutation.isPending.value"
-            @click="openReschedule(appointment)"
+        <div class="agenda-list">
+          <article
+            v-for="appointment in group.appointments"
+            :key="appointment.id"
+            class="agenda-item"
+            :class="statusClass(appointment.status)"
           >
-            Reprogramar
-          </button>
+            <div class="agenda-time">
+              <strong>{{ formatTime(appointment.startAt) }}</strong>
+              <span>{{ formatTime(appointment.endAt) }}</span>
+            </div>
 
-          <button
-            v-if="canRate(appointment)"
-            class="secondary-button inline-button"
-            type="button"
-            :disabled="ratingMutation.isPending.value"
-            @click="openRating(appointment)"
-          >
-            Valorar
-          </button>
+            <div class="agenda-card">
+              <div class="agenda-card-header">
+                <div>
+                  <h3>{{ appointment.reason ?? 'Cita odontológica' }}</h3>
+                  <p>{{ formatTimeRange(appointment) }}</p>
+                </div>
 
-          <button
-            v-if="canCancel(appointment)"
-            class="secondary-button inline-button"
-            type="button"
-            :disabled="cancelMutation.isPending.value"
-            @click="handleCancel(appointment.id)"
-          >
-            Cancelar
-          </button>
+                <span class="status-badge" :class="statusClass(appointment.status)">
+                  {{ statusLabel(appointment.status) }}
+                </span>
+              </div>
+
+              <div class="agenda-meta">
+                <span>Dentista</span>
+                <strong>{{ appointment.dentistId }}</strong>
+              </div>
+
+              <p v-if="appointment.notes" class="agenda-notes">
+                {{ appointment.notes }}
+              </p>
+
+              <div class="card-actions">
+                <button
+                  v-if="canReschedule(appointment)"
+                  class="secondary-button inline-button"
+                  type="button"
+                  :disabled="rescheduleMutation.isPending.value"
+                  @click="openReschedule(appointment)"
+                >
+                  Reprogramar
+                </button>
+
+                <button
+                  v-if="canRate(appointment)"
+                  class="secondary-button inline-button"
+                  type="button"
+                  :disabled="ratingMutation.isPending.value"
+                  @click="openRating(appointment)"
+                >
+                  Valorar
+                </button>
+
+                <button
+                  v-if="canCancel(appointment)"
+                  class="secondary-button inline-button"
+                  type="button"
+                  :disabled="cancelMutation.isPending.value"
+                  @click="handleCancel(appointment.id)"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </article>
         </div>
-      </article>
+      </section>
     </div>
 
     <div v-else class="empty-state">

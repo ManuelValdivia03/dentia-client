@@ -60,6 +60,10 @@ const appointments = computed(() => {
   })
 })
 
+const appointmentGroups = computed(() => {
+  return groupAppointmentsByDay(appointments.value)
+})
+
 function normalizeStatus(status: string) {
   return status.toUpperCase()
 }
@@ -75,11 +79,62 @@ function statusLabel(status: string) {
   return labels[normalizeStatus(status)] ?? status
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('es-MX', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+function statusClass(status: string) {
+  return `status-${normalizeStatus(status).toLowerCase()}`
+}
+
+function formatDay(value: string) {
+  return new Date(value).toLocaleDateString('es-MX', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   })
+}
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatTimeRange(appointment: Appointment) {
+  return `${formatTime(appointment.startAt)} - ${formatTime(appointment.endAt)}`
+}
+
+function getLocalDateValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function groupAppointmentsByDay(appointments: Appointment[]) {
+  return appointments.reduce<Array<{ key: string; label: string; appointments: Appointment[] }>>(
+    (groups, appointment) => {
+      const key = getLocalDateValue(new Date(appointment.startAt))
+      const existingGroup = groups.find((group) => group.key === key)
+
+      if (existingGroup) {
+        existingGroup.appointments.push(appointment)
+      } else {
+        groups.push({
+          key,
+          label: formatDay(appointment.startAt),
+          appointments: [appointment],
+        })
+      }
+
+      return groups
+    },
+    [],
+  )
+}
+
+function appointmentCountLabel(count: number) {
+  return count === 1 ? '1 cita' : `${count} citas`
 }
 
 function canConfirm(appointment: Appointment) {
@@ -161,67 +216,97 @@ async function submitPrescription() {
       No se pudo cargar la agenda.
     </p>
 
-    <div v-else-if="appointments.length" class="cards-grid">
-      <article
-        v-for="appointment in appointments"
-        :key="appointment.id"
-        class="card"
+    <div v-else-if="appointmentGroups.length" class="agenda-board">
+      <section
+        v-for="group in appointmentGroups"
+        :key="group.key"
+        class="agenda-day"
       >
-        <div class="card-header">
+        <div class="agenda-day-header">
           <div>
-            <h3>{{ appointment.reason ?? 'Cita odontológica' }}</h3>
-            <p>{{ formatDate(appointment.startAt) }}</p>
+            <p class="eyebrow">Día</p>
+            <h3>{{ group.label }}</h3>
           </div>
-
-          <span class="badge">{{ statusLabel(appointment.status) }}</span>
+          <span class="agenda-count">{{ appointmentCountLabel(group.appointments.length) }}</span>
         </div>
 
-        <p><strong>Paciente:</strong> {{ appointment.patientId }}</p>
-        <p v-if="appointment.notes">
-          <strong>Notas:</strong> {{ appointment.notes }}
-        </p>
-
-        <div class="card-actions">
-          <button
-            v-if="canConfirm(appointment)"
-            class="primary-button inline-button"
-            type="button"
-            :disabled="isBusy()"
-            @click="handleConfirm(appointment.id)"
+        <div class="agenda-list">
+          <article
+            v-for="appointment in group.appointments"
+            :key="appointment.id"
+            class="agenda-item"
+            :class="statusClass(appointment.status)"
           >
-            Confirmar
-          </button>
+            <div class="agenda-time">
+              <strong>{{ formatTime(appointment.startAt) }}</strong>
+              <span>{{ formatTime(appointment.endAt) }}</span>
+            </div>
 
-          <button
-            v-if="canComplete(appointment)"
-            class="primary-button inline-button"
-            type="button"
-            :disabled="isBusy()"
-            @click="handleComplete(appointment.id)"
-          >
-            Completar
-          </button>
+            <div class="agenda-card">
+              <div class="agenda-card-header">
+                <div>
+                  <h3>{{ appointment.reason ?? 'Cita odontológica' }}</h3>
+                  <p>{{ formatTimeRange(appointment) }}</p>
+                </div>
 
-          <button
-            v-if="canPrescribe(appointment)"
-            class="secondary-button inline-button"
-            type="button"
-            @click="openPrescription(appointment)"
-          >
-            Receta
-          </button>
+                <span class="status-badge" :class="statusClass(appointment.status)">
+                  {{ statusLabel(appointment.status) }}
+                </span>
+              </div>
 
-          <button
-            v-if="canCancel(appointment)"
-            class="secondary-button inline-button"
-            type="button"
-            :disabled="isBusy()"
-            @click="handleCancel(appointment.id)"
-          >
-            Cancelar
-          </button>
+              <div class="agenda-meta">
+                <span>Paciente</span>
+                <strong>{{ appointment.patientId }}</strong>
+              </div>
+
+              <p v-if="appointment.notes" class="agenda-notes">
+                {{ appointment.notes }}
+              </p>
+
+              <div class="card-actions">
+                <button
+                  v-if="canConfirm(appointment)"
+                  class="primary-button inline-button"
+                  type="button"
+                  :disabled="isBusy()"
+                  @click="handleConfirm(appointment.id)"
+                >
+                  Confirmar
+                </button>
+
+                <button
+                  v-if="canComplete(appointment)"
+                  class="primary-button inline-button"
+                  type="button"
+                  :disabled="isBusy()"
+                  @click="handleComplete(appointment.id)"
+                >
+                  Completar
+                </button>
+
+                <button
+                  v-if="canPrescribe(appointment)"
+                  class="secondary-button inline-button"
+                  type="button"
+                  @click="openPrescription(appointment)"
+                >
+                  Receta
+                </button>
+
+                <button
+                  v-if="canCancel(appointment)"
+                  class="secondary-button inline-button"
+                  type="button"
+                  :disabled="isBusy()"
+                  @click="handleCancel(appointment.id)"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </article>
         </div>
-      </article>
+      </section>
     </div>
 
     <div v-else class="empty-state">
