@@ -9,6 +9,8 @@ import {
   rescheduleAppointment,
   type Appointment,
 } from '../modules/appointments/appointments.api'
+import { getDentists } from '../modules/dentists/dentists.service'
+import type { Dentist } from '../modules/dentists/dentists.types'
 
 const queryClient = useQueryClient()
 
@@ -29,8 +31,22 @@ const appointmentsQuery = useQuery({
   queryFn: getAppointments,
 })
 
+const dentistsQuery = useQuery({
+  queryKey: ['dentists'],
+  queryFn: getDentists,
+})
+
 const appointmentGroups = computed(() => {
   return groupAppointmentsByDay(appointmentsQuery.data.value ?? [])
+})
+
+const dentistNameById = computed(() => {
+  return new Map(
+    (dentistsQuery.data.value ?? []).map((dentist) => [
+      dentist.domainId,
+      dentistName(dentist),
+    ]),
+  )
 })
 
 const cancelMutation = useMutation({
@@ -138,6 +154,14 @@ function groupAppointmentsByDay(appointments: Appointment[]) {
 
 function appointmentCountLabel(count: number) {
   return count === 1 ? '1 cita' : `${count} citas`
+}
+
+function dentistName(dentist: Dentist) {
+  return dentist.fullName ?? dentist.name ?? dentist.email ?? dentist.domainId
+}
+
+function dentistDisplayName(dentistId: string) {
+  return dentistNameById.value.get(dentistId) ?? dentistId
 }
 
 function getLocalDateValue(date = new Date()) {
@@ -303,7 +327,7 @@ async function submitRating() {
 
               <div class="agenda-meta">
                 <span>Dentista</span>
-                <strong>{{ appointment.dentistId }}</strong>
+                <strong>{{ dentistDisplayName(appointment.dentistId) }}</strong>
               </div>
 
               <p v-if="appointment.notes" class="agenda-notes">

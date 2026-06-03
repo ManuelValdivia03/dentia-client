@@ -10,6 +10,10 @@ import {
   type Appointment,
 } from '../modules/appointments/appointments.api'
 import { createPrescription } from '../modules/prescriptions/prescriptions.api'
+import {
+  getUserByDomainId,
+  userDisplayName,
+} from '../modules/users/users.api'
 
 const queryClient = useQueryClient()
 
@@ -62,6 +66,31 @@ const appointments = computed(() => {
 
 const appointmentGroups = computed(() => {
   return groupAppointmentsByDay(appointments.value)
+})
+
+const patientIds = computed(() => {
+  return [...new Set(appointments.value.map((appointment) => appointment.patientId))]
+})
+
+const patientsQuery = useQuery({
+  queryKey: ['users', 'appointment-patients', patientIds],
+  queryFn: async () => {
+    const patients = await Promise.all(
+      patientIds.value.map((patientId) => getUserByDomainId(patientId)),
+    )
+
+    return patients
+  },
+  enabled: computed(() => patientIds.value.length > 0),
+})
+
+const patientNameById = computed(() => {
+  return new Map(
+    (patientsQuery.data.value ?? []).map((patient) => [
+      patient.domainId,
+      userDisplayName(patient),
+    ]),
+  )
 })
 
 function normalizeStatus(status: string) {
@@ -135,6 +164,10 @@ function groupAppointmentsByDay(appointments: Appointment[]) {
 
 function appointmentCountLabel(count: number) {
   return count === 1 ? '1 cita' : `${count} citas`
+}
+
+function patientDisplayName(patientId: string) {
+  return patientNameById.value.get(patientId) ?? patientId
 }
 
 function canConfirm(appointment: Appointment) {
@@ -256,7 +289,7 @@ async function submitPrescription() {
 
               <div class="agenda-meta">
                 <span>Paciente</span>
-                <strong>{{ appointment.patientId }}</strong>
+                <strong>{{ patientDisplayName(appointment.patientId) }}</strong>
               </div>
 
               <p v-if="appointment.notes" class="agenda-notes">
