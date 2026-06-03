@@ -6,4 +6,5 @@ export interface Dentist {
   email?: string
   specialty?: string
   phone?: string
+  photoUrl?: string | null
 }

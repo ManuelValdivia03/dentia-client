@@ -16,6 +16,7 @@ const queryClient = useQueryClient()
 
 const search = ref('')
 const selectedDentist = ref<Dentist | null>(null)
+const failedPhotoDentistIds = ref(new Set<string>())
 const appointmentDate = ref('')
 const appointmentTime = ref('')
 const reason = ref('')
@@ -110,6 +111,23 @@ watch(appointmentTime, (time) => {
 
 function dentistName(dentist: Dentist) {
   return dentist.fullName ?? dentist.name ?? dentist.email ?? 'Dentista sin nombre'
+}
+
+function dentistPhotoUrl(dentist: Dentist) {
+  const url = dentist.photoUrl
+  if (!url || failedPhotoDentistIds.value.has(dentist.domainId)) return ''
+
+  if (url.startsWith('http')) return url
+
+  const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
+  return `${baseUrl}${url}`
+}
+
+function handleDentistPhotoError(dentist: Dentist) {
+  failedPhotoDentistIds.value = new Set([
+    ...failedPhotoDentistIds.value,
+    dentist.domainId,
+  ])
 }
 
 function openSchedule(dentist: Dentist) {
@@ -267,7 +285,13 @@ async function submitAppointment() {
       >
         <div class="card-header">
           <div class="avatar">
-            {{ dentistName(dentist).charAt(0).toUpperCase() }}
+            <img
+              v-if="dentistPhotoUrl(dentist)"
+              :src="dentistPhotoUrl(dentist)"
+              :alt="`Foto de ${dentistName(dentist)}`"
+              @error="handleDentistPhotoError(dentist)"
+            />
+            <span v-else>{{ dentistName(dentist).charAt(0).toUpperCase() }}</span>
           </div>
 
           <div>
