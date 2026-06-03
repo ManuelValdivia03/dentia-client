@@ -123,11 +123,6 @@ function goBack() {
           </div>
 
           <div>
-            <span>Teléfono</span>
-            <strong>{{ dentist.phone ?? 'No registrado' }}</strong>
-          </div>
-
-          <div>
             <span>Especialidad</span>
             <strong>{{ dentist.specialty ?? 'Odontología general' }}</strong>
           </div>
