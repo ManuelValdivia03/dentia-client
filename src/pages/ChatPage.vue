@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import { useAuthStore } from '../stores/auth.store'
+import {
+  getAppointments,
+  type Appointment,
+} from '../modules/appointments/appointments.api'
 import {
   createConversation,
   getConversations,
@@ -11,6 +15,13 @@ import {
   sendMessage,
   type Conversation,
 } from '../modules/chat/chat.api'
+import { getDentists } from '../modules/dentists/dentists.service'
+import type { Dentist } from '../modules/dentists/dentists.types'
+import {
+  getUserByDomainId,
+  userDisplayName,
+  type UserSummary,
+} from '../modules/users/users.api'
 
 const authStore = useAuthStore()
 const queryClient = useQueryClient()
@@ -27,6 +38,94 @@ const conversationsQuery = useQuery({
   refetchInterval: 15000,
 })
 
+const appointmentsQuery = useQuery({
+  queryKey: ['appointments'],
+  queryFn: getAppointments,
+})
+
+const dentistsQuery = useQuery({
+  queryKey: ['dentists'],
+  queryFn: getDentists,
+})
+
+const relationshipAppointments = computed(() => {
+  return (appointmentsQuery.data.value ?? []).filter((appointment) =>
+    hasChatRelation(appointment),
+  )
+})
+
+const allowedDentistIds = computed(() => [
+  ...new Set(relationshipAppointments.value.map((appointment) => appointment.dentistId)),
+])
+
+const allowedPatientIds = computed(() => [
+  ...new Set(relationshipAppointments.value.map((appointment) => appointment.patientId)),
+])
+
+const dentistOptions = computed(() => {
+  const dentists = dentistsQuery.data.value ?? []
+
+  if (authStore.role === 'PATIENT') {
+    return dentists.filter((dentist) => allowedDentistIds.value.includes(dentist.domainId))
+  }
+
+  return dentists
+})
+
+const conversationPatientIds = computed(() => [
+  ...new Set((conversationsQuery.data.value ?? []).map((conversation) => conversation.patientId)),
+])
+
+const patientLookupIds = computed(() => [
+  ...new Set([...allowedPatientIds.value, ...conversationPatientIds.value]),
+])
+
+const patientsQuery = useQuery({
+  queryKey: ['users', 'chat-patients', patientLookupIds],
+  queryFn: async () => {
+    const users = await Promise.all(
+      patientLookupIds.value.map(async (id) => {
+        try {
+          return await getUserByDomainId(id)
+        } catch {
+          return { domainId: id } as UserSummary
+        }
+      }),
+    )
+
+    return users
+  },
+  enabled: computed(() => patientLookupIds.value.length > 0),
+})
+
+const patientOptions = computed(() => {
+  const patients = patientsQuery.data.value ?? []
+
+  if (authStore.role === 'DENTIST') {
+    return patients.filter((patient) => allowedPatientIds.value.includes(patient.domainId))
+  }
+
+  return patients
+})
+
+const patientNameById = computed(() => {
+  return new Map(
+    (patientsQuery.data.value ?? []).map((patient) => [
+      patient.domainId,
+      userDisplayName(patient),
+    ]),
+  )
+})
+
+const dentistNameById = computed(() => {
+  return new Map(
+    (dentistsQuery.data.value ?? []).map((dentist) => [
+      dentist.domainId,
+      dentistName(dentist),
+    ]),
+  )
+})
+
 const selectedConversationId = computed(() => {
   return selectedConversation.value?.id ?? selectedConversation.value?._id ?? ''
 })
@@ -36,6 +135,18 @@ const messagesQuery = useQuery({
   queryFn: () => getMessages(selectedConversationId.value),
   enabled: computed(() => Boolean(selectedConversationId.value)),
   refetchInterval: 8000,
+})
+
+const canCreateConversation = computed(() => {
+  if (authStore.role === 'PATIENT') {
+    return Boolean(authStore.user?.domainId && dentistId.value)
+  }
+
+  if (authStore.role === 'DENTIST') {
+    return Boolean(patientId.value && authStore.user?.domainId)
+  }
+
+  return Boolean(patientId.value && dentistId.value)
 })
 
 const createConversationMutation = useMutation({
@@ -55,20 +166,69 @@ const sendMessageMutation = useMutation({
   },
 })
 
+watch(dentistOptions, (options) => {
+  if (authStore.role !== 'PATIENT') return
+
+  if (!options.some((dentist) => dentist.domainId === dentistId.value)) {
+    dentistId.value = options[0]?.domainId ?? ''
+  }
+}, { immediate: true })
+
+watch(patientOptions, (options) => {
+  if (authStore.role !== 'DENTIST') return
+
+  if (!options.some((patient) => patient.domainId === patientId.value)) {
+    patientId.value = options[0]?.domainId ?? ''
+  }
+}, { immediate: true })
+
+function hasChatRelation(appointment: Appointment) {
+  const status = appointment.status.toUpperCase()
+  return status === 'CONFIRMED' || status === 'COMPLETED'
+}
+
+function dentistName(dentist: Dentist) {
+  return dentist.fullName ?? dentist.name ?? dentist.email ?? dentist.domainId
+}
+
 function conversationId(conversation: Conversation) {
   return conversation.id ?? conversation._id ?? ''
 }
 
+function patientDisplayName(id: string) {
+  if (id === authStore.user?.domainId) {
+    return authStore.user.fullName ?? authStore.user.name ?? authStore.user.email ?? id
+  }
+
+  return patientNameById.value.get(id) ?? id
+}
+
+function dentistDisplayName(id: string) {
+  if (id === authStore.user?.domainId) {
+    return authStore.user.fullName ?? authStore.user.name ?? authStore.user.email ?? id
+  }
+
+  return dentistNameById.value.get(id) ?? id
+}
+
 function conversationTitle(conversation: Conversation) {
   if (authStore.role === 'PATIENT') {
-    return `Dentista ${conversation.dentistId}`
+    return dentistDisplayName(conversation.dentistId)
   }
 
   if (authStore.role === 'DENTIST') {
-    return `Paciente ${conversation.patientId}`
+    return patientDisplayName(conversation.patientId)
   }
 
-  return `${conversation.patientId} · ${conversation.dentistId}`
+  return `${patientDisplayName(conversation.patientId)} · ${dentistDisplayName(conversation.dentistId)}`
+}
+
+function messageSenderName(senderId: string) {
+  if (senderId === authStore.user?.domainId) {
+    return 'Tú'
+  }
+
+  return patientNameById.value.get(senderId) ?? dentistNameById.value.get(senderId) ?? senderId
 }
 
 function formatDate(value?: string) {
@@ -90,11 +250,16 @@ async function selectConversation(conversation: Conversation) {
 }
 
 async function submitConversation() {
-  if (!patientId.value || !dentistId.value) return
+  const currentPatientId =
+    authStore.role === 'PATIENT' ? authStore.user?.domainId : patientId.value
+  const currentDentistId =
+    authStore.role === 'DENTIST' ? authStore.user?.domainId : dentistId.value
+
+  if (!currentPatientId || !currentDentistId) return
 
   await createConversationMutation.mutateAsync({
-    patientId: patientId.value,
-    dentistId: dentistId.value,
+    patientId: currentPatientId,
+    dentistId: currentDentistId,
   })
 }
 
@@ -130,17 +295,53 @@ async function submitMessage() {
         <h3>Conversaciones</h3>
 
         <form class="stacked-form" @submit.prevent="submitConversation">
-          <label>
+          <label v-if="authStore.role !== 'PATIENT'">
             Paciente
-            <input v-model="patientId" type="text" placeholder="patient_id" required />
+            <select v-model="patientId" required>
+              <option value="">Selecciona un paciente</option>
+              <option
+                v-for="patient in patientOptions"
+                :key="patient.domainId"
+                :value="patient.domainId"
+              >
+                {{ userDisplayName(patient) }}
+              </option>
+            </select>
           </label>
 
-          <label>
+          <label v-if="authStore.role !== 'DENTIST'">
             Dentista
-            <input v-model="dentistId" type="text" placeholder="dentist_id" required />
+            <select v-model="dentistId" required>
+              <option value="">Selecciona un dentista</option>
+              <option
+                v-for="dentist in dentistOptions"
+                :key="dentist.domainId"
+                :value="dentist.domainId"
+              >
+                {{ dentistName(dentist) }}
+              </option>
+            </select>
           </label>
 
-          <button class="primary-button" type="submit" :disabled="createConversationMutation.isPending.value">
+          <p
+            v-if="authStore.role === 'PATIENT' && !dentistOptions.length"
+            class="muted-text"
+          >
+            Podrás iniciar chat cuando tengas una cita confirmada o completada.
+          </p>
+
+          <p
+            v-if="authStore.role === 'DENTIST' && !patientOptions.length"
+            class="muted-text"
+          >
+            Podrás iniciar chat con pacientes que tengan una cita confirmada o completada.
+          </p>
+
+          <button
+            class="primary-button"
+            type="submit"
+            :disabled="createConversationMutation.isPending.value || !canCreateConversation"
+          >
             Crear conversación
           </button>
         </form>
@@ -180,7 +381,7 @@ async function submitMessage() {
               :class="{ own: message.senderId === authStore.user?.domainId }"
             >
               <p>{{ message.body ?? 'Adjunto enviado' }}</p>
-              <span>{{ message.senderRole }} · {{ formatDate(message.createdAt) }}</span>
+              <span>{{ messageSenderName(message.senderId) }} · {{ formatDate(message.createdAt) }}</span>
             </div>
           </div>
 
