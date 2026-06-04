@@ -72,6 +72,14 @@ export async function getAppointmentAvailability(
   return data
 }
 
+export async function getDentistDayAgenda(date: string) {
+  const { data } = await api.get('/appointments/day', {
+    params: { date },
+  });
+
+  return data;
+}
+
 export async function createAppointment(payload: CreateAppointmentPayload) {
   const { data } = await api.post<Appointment>('/appointments', payload)
   return data

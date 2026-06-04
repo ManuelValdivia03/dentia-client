@@ -6,7 +6,7 @@ import {
   cancelAppointment,
   completeAppointment,
   confirmAppointment,
-  getAppointments,
+  getDentistDayAgenda,
   type Appointment,
 } from '../modules/appointments/appointments.api'
 import { createPrescription } from '../modules/prescriptions/prescriptions.api'
@@ -17,15 +17,17 @@ import {
 
 const queryClient = useQueryClient()
 
+const selectedDate = ref(new Date().toISOString().slice(0, 10))
 const prescriptionTarget = ref<Appointment | null>(null)
 const diagnosis = ref('')
 const indications = ref('')
 const prescriptionNotes = ref('')
 const appointmentActionErrors = ref<Record<string, string>>({})
+const prescriptionError = ref('')
 
 const appointmentsQuery = useQuery({
-  queryKey: ['appointments'],
-  queryFn: getAppointments,
+  queryKey: computed(() => ['appointments', 'day', selectedDate.value]),
+  queryFn: () => getDentistDayAgenda(selectedDate.value),
 })
 
 const confirmMutation = useMutation({
@@ -74,7 +76,7 @@ const patientIds = computed(() => {
 })
 
 const patientsQuery = useQuery({
-  queryKey: ['users', 'appointment-patients', patientIds],
+  queryKey: computed(() => ['users', 'appointment-patients', patientIds.value]),
   queryFn: async () => {
     const patients = await Promise.all(
       patientIds.value.map((patientId) => getUserByDomainId(patientId)),
@@ -202,7 +204,12 @@ function canPrescribe(appointment: Appointment) {
 
 async function handleConfirm(id: string) {
   clearActionError(id)
-  await confirmMutation.mutateAsync(id)
+
+  try {
+    await confirmMutation.mutateAsync(id)
+  } catch (error) {
+    setActionError(id, getActionErrorMessage(error))
+  }
 }
 
 async function handleComplete(appointment: Appointment) {
@@ -228,7 +235,11 @@ async function handleCancel(id: string) {
   const confirmed = window.confirm('¿Cancelar esta cita?')
   if (!confirmed) return
 
-  await cancelMutation.mutateAsync(id)
+  try {
+    await cancelMutation.mutateAsync(id)
+  } catch (error) {
+    setActionError(id, getActionErrorMessage(error))
+  }
 }
 
 function setActionError(appointmentId: string, message: string) {
@@ -254,7 +265,7 @@ function getActionErrorMessage(error: unknown) {
     return 'Todavía no puedes completar esta cita porque aún no llega su fecha y hora.'
   }
 
-  return message ?? 'No se pudo completar la cita. Intenta de nuevo.'
+  return message ?? 'No se pudo completar la acción. Intenta de nuevo.'
 }
 
 function isBusy() {
@@ -266,23 +277,38 @@ function isBusy() {
 }
 
 function openPrescription(appointment: Appointment) {
+  if (!canPrescribe(appointment)) {
+    setActionError(
+      appointment.id,
+      'Solo se pueden crear recetas para citas completadas.',
+    )
+    return
+  }
+
   prescriptionTarget.value = appointment
   diagnosis.value = ''
   indications.value = ''
   prescriptionNotes.value = ''
+  prescriptionError.value = ''
 }
 
 async function submitPrescription() {
   if (!prescriptionTarget.value) return
 
-  await prescriptionMutation.mutateAsync({
-    appointmentId: prescriptionTarget.value.id,
-    patientId: prescriptionTarget.value.patientId,
-    dentistId: prescriptionTarget.value.dentistId,
-    diagnosis: diagnosis.value,
-    indications: indications.value,
-    notes: prescriptionNotes.value || undefined,
-  })
+  prescriptionError.value = ''
+
+  try {
+    await prescriptionMutation.mutateAsync({
+      appointmentId: prescriptionTarget.value.id,
+      patientId: prescriptionTarget.value.patientId,
+      dentistId: prescriptionTarget.value.dentistId,
+      diagnosis: diagnosis.value,
+      indications: indications.value,
+      notes: prescriptionNotes.value || undefined,
+    })
+  } catch (error) {
+    prescriptionError.value = getActionErrorMessage(error)
+  }
 }
 </script>
 
@@ -293,9 +319,16 @@ async function submitPrescription() {
         <p class="eyebrow">Odontólogo</p>
         <h2>Mi agenda</h2>
       </div>
+
+      <label class="date-filter">
+        Fecha
+        <input v-model="selectedDate" type="date" />
+      </label>
     </div>
 
-    <p v-if="appointmentsQuery.isLoading.value">Cargando agenda...</p>
+    <p v-if="appointmentsQuery.isLoading.value || appointmentsQuery.isFetching.value">
+      Cargando agenda...
+    </p>
 
     <p v-else-if="appointmentsQuery.isError.value" class="error-message">
       No se pudo cargar la agenda.
@@ -432,6 +465,10 @@ async function submitPrescription() {
           Notas
           <textarea v-model="prescriptionNotes" rows="3" />
         </label>
+
+        <p v-if="prescriptionError" class="error-message">
+          {{ prescriptionError }}
+        </p>
 
         <button class="primary-button" type="submit" :disabled="prescriptionMutation.isPending.value">
           Guardar receta
