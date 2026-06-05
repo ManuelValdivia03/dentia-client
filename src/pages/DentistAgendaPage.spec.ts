@@ -58,6 +58,18 @@ function mountPage() {
   })
 }
 
+function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper
+    .findAll('button')
+    .find((candidate) => candidate.text().includes(text))
+
+  if (!button) {
+    throw new Error(`Button not found: ${text}`)
+  }
+
+  return button
+}
+
 describe('DentistAgendaPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -67,6 +79,52 @@ describe('DentistAgendaPage', () => {
       fullName: 'Paciente Uno',
       email: 'paciente@dentia.local',
     })
+  })
+
+  it('shows multiple pending requests for the same time slot', async () => {
+    mocks.getDentistDayAgenda.mockResolvedValue([
+      {
+        id: 'appointment-1',
+        patientId: 'p1',
+        dentistId: 'd1',
+        reason: 'Consulta paciente uno',
+        notes: '',
+        startAt: '2026-06-04T15:00:00.000Z',
+        endAt: '2026-06-04T16:00:00.000Z',
+        status: 'PENDING',
+      },
+      {
+        id: 'appointment-2',
+        patientId: 'p2',
+        dentistId: 'd1',
+        reason: 'Consulta paciente dos',
+        notes: '',
+        startAt: '2026-06-04T15:00:00.000Z',
+        endAt: '2026-06-04T16:00:00.000Z',
+        status: 'PENDING',
+      },
+    ])
+
+    mocks.getUserByDomainId
+      .mockResolvedValueOnce({
+        domainId: 'p1',
+        fullName: 'Paciente Uno',
+        email: 'p1@dentia.local',
+      })
+      .mockResolvedValueOnce({
+        domainId: 'p2',
+        fullName: 'Paciente Dos',
+        email: 'p2@dentia.local',
+      })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Consulta paciente uno')
+    expect(wrapper.text()).toContain('Consulta paciente dos')
+    expect(wrapper.text()).toContain('Paciente Uno')
+    expect(wrapper.text()).toContain('Paciente Dos')
+    expect(wrapper.text()).toContain('Pendiente')
   })
 
   it('loads appointments using dentist day agenda endpoint', async () => {
@@ -130,4 +188,86 @@ describe('DentistAgendaPage', () => {
 
     expect(wrapper.text()).not.toContain('Receta')
   })
+})
+
+it('confirms pending appointment request', async () => {
+  mocks.getDentistDayAgenda.mockResolvedValue([
+    {
+      id: 'appointment-1',
+      patientId: 'p1',
+      dentistId: 'd1',
+      reason: 'Consulta pendiente',
+      notes: '',
+      startAt: '2026-06-04T15:00:00.000Z',
+      endAt: '2026-06-04T16:00:00.000Z',
+      status: 'PENDING',
+    },
+  ])
+
+  mocks.confirmAppointment.mockResolvedValue({
+    id: 'appointment-1',
+    patientId: 'p1',
+    dentistId: 'd1',
+    reason: 'Consulta pendiente',
+    notes: '',
+    startAt: '2026-06-04T15:00:00.000Z',
+    endAt: '2026-06-04T16:00:00.000Z',
+    status: 'CONFIRMED',
+  })
+
+  const wrapper = mountPage()
+  await flushPromises()
+
+  expect(wrapper.text()).toContain('Consulta pendiente')
+  expect(wrapper.text()).toContain('Pendiente')
+
+  await findButtonByText(wrapper, 'Confirmar').trigger('click')
+  await flushPromises()
+
+  expect(mocks.confirmAppointment).toHaveBeenCalledTimes(1)
+})
+
+it('shows cancelled appointments after competing requests are cancelled', async () => {
+  mocks.getDentistDayAgenda.mockResolvedValue([
+    {
+      id: 'appointment-1',
+      patientId: 'p1',
+      dentistId: 'd1',
+      reason: 'Solicitud aceptada',
+      notes: '',
+      startAt: '2026-06-04T15:00:00.000Z',
+      endAt: '2026-06-04T16:00:00.000Z',
+      status: 'CONFIRMED',
+    },
+    {
+      id: 'appointment-2',
+      patientId: 'p2',
+      dentistId: 'd1',
+      reason: 'Solicitud cancelada automáticamente',
+      notes: '',
+      startAt: '2026-06-04T15:00:00.000Z',
+      endAt: '2026-06-04T16:00:00.000Z',
+      status: 'CANCELLED',
+    },
+  ])
+
+  mocks.getUserByDomainId
+    .mockResolvedValueOnce({
+      domainId: 'p1',
+      fullName: 'Paciente Uno',
+      email: 'p1@dentia.local',
+    })
+    .mockResolvedValueOnce({
+      domainId: 'p2',
+      fullName: 'Paciente Dos',
+      email: 'p2@dentia.local',
+    })
+
+  const wrapper = mountPage()
+  await flushPromises()
+
+  expect(wrapper.text()).toContain('Solicitud aceptada')
+  expect(wrapper.text()).toContain('Confirmada')
+  expect(wrapper.text()).toContain('Solicitud cancelada automáticamente')
+  expect(wrapper.text()).toContain('Cancelada')
 })
