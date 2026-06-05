@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import {
@@ -14,6 +14,7 @@ import {
   getUserByDomainId,
   userDisplayName,
 } from '../modules/users/users.api'
+import { useRoute, useRouter } from 'vue-router'
 
 const queryClient = useQueryClient()
 
@@ -24,6 +25,8 @@ const indications = ref('')
 const prescriptionNotes = ref('')
 const appointmentActionErrors = ref<Record<string, string>>({})
 const prescriptionError = ref('')
+const route = useRoute()
+const router = useRouter()
 
 const appointmentsQuery = useQuery({
   queryKey: computed(() => ['appointments', 'day', selectedDate.value]),
@@ -62,9 +65,14 @@ const prescriptionMutation = useMutation({
 })
 
 const appointments = computed(() => {
-  return [...(appointmentsQuery.data.value ?? [])].sort((a, b) => {
-    return new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
-  })
+  return [...(appointmentsQuery.data.value ?? [])]
+    .filter((appointment) => {
+      if (!selectedStatus.value) return true
+      return normalizeStatus(appointment.status) === selectedStatus.value
+    })
+    .sort((a, b) => {
+      return new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
+    })
 })
 
 const appointmentGroups = computed(() => {
@@ -124,6 +132,36 @@ function formatDay(value: string) {
   })
 }
 
+const statusFilterOptions = [
+  { value: '', label: 'Todas' },
+  { value: 'PENDING', label: 'Pendientes' },
+  { value: 'CONFIRMED', label: 'Confirmadas' },
+  { value: 'COMPLETED', label: 'Completadas' },
+  { value: 'CANCELLED', label: 'Canceladas' },
+]
+
+function updateStatusFilter(status: string) {
+  selectedStatus.value = status
+
+  router.replace({
+    query: {
+      ...route.query,
+      status: status || undefined,
+    },
+  })
+}
+
+const selectedStatus = ref(
+  typeof route.query.status === 'string' ? route.query.status.toUpperCase() : '',
+)
+
+watch(
+  () => route.query.status,
+  (status) => {
+    selectedStatus.value = typeof status === 'string' ? status.toUpperCase() : ''
+  },
+)
+
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString('es-MX', {
     hour: '2-digit',
@@ -170,7 +208,11 @@ function appointmentCountLabel(count: number) {
 }
 
 function patientDisplayName(patientId: string) {
-  return patientNameById.value.get(patientId) ?? patientId
+  if (patientsQuery.isLoading.value || patientsQuery.isFetching.value) {
+    return 'Cargando paciente...'
+  }
+
+  return patientNameById.value.get(patientId) ?? 'Paciente no disponible'
 }
 
 function canConfirm(appointment: Appointment) {
@@ -326,6 +368,23 @@ async function submitPrescription() {
       </label>
     </div>
 
+    <p class="helper-text">
+      Las solicitudes pendientes no bloquean definitivamente el horario hasta que confirmes una
+    </p>
+
+    <div class="agenda-filters">
+      <button
+        v-for="option in statusFilterOptions"
+        :key="option.value || 'all'"
+        class="filter-chip"
+        :class="{ active: selectedStatus === option.value }"
+        type="button"
+        @click="updateStatusFilter(option.value)"
+      >
+        {{ option.label }}
+      </button>
+    </div>
+
     <p v-if="appointmentsQuery.isLoading.value || appointmentsQuery.isFetching.value">
       Cargando agenda...
     </p>
@@ -369,6 +428,13 @@ async function submitPrescription() {
 
                 <span class="status-badge" :class="statusClass(appointment.status)">
                   {{ statusLabel(appointment.status) }}
+                </span>
+
+                <span
+                  v-if="normalizeStatus(appointment.status) === 'PENDING'"
+                  class="request-badge"
+                >
+                  Solicitud por confirmar
                 </span>
               </div>
 
@@ -435,7 +501,11 @@ async function submitPrescription() {
     </div>
 
     <div v-else class="empty-state">
-      No tienes citas asignadas.
+      {{
+        selectedStatus
+          ? `No tienes citas ${statusLabel(selectedStatus).toLowerCase()} para esta fecha.`
+          : 'No tienes citas asignadas para esta fecha.'
+      }}
     </div>
 
     <div v-if="prescriptionTarget" class="card section-card">
@@ -477,3 +547,46 @@ async function submitPrescription() {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.request-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.helper-text {
+  margin: -0.5rem 0 1rem;
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+.agenda-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+
+.filter-chip {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.filter-chip.active {
+  border-color: #0f766e;
+  background: #e6f7f2;
+  color: #0f766e;
+}
+</style>
