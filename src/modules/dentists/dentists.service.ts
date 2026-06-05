@@ -15,6 +15,11 @@ export async function getDentists(): Promise<Dentist[]> {
   return data
 }
 
+export async function getPrioritizedDentists(): Promise<Dentist[]> {
+  const { data } = await api.get<Dentist[]>('/dentists/prioritized')
+  return data
+}
+
 export async function getDentistByDomainId(domainId: string): Promise<Dentist> {
   const { data } = await api.get<Dentist>(`/dentists/${domainId}`)
   return data

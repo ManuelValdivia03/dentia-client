@@ -9,4 +9,5 @@ export interface Dentist {
   escuela?: string
   descripcion?: string
   photoUrl?: string | null
+  previouslyVisited?: boolean
 }

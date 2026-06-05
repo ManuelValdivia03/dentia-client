@@ -11,10 +11,9 @@ import {
 } from '../modules/appointments/appointments.api'
 import {
   getDentistRatingsSummary,
-  getDentists,
+  getPrioritizedDentists,
 } from '../modules/dentists/dentists.service'
 import type { Dentist } from '../modules/dentists/dentists.types'
-
 const queryClient = useQueryClient()
 const router = useRouter()
 
@@ -40,8 +39,8 @@ const appointmentMinTime = computed(
 )
 
 const dentistsQuery = useQuery({
-  queryKey: ['dentists'],
-  queryFn: getDentists,
+  queryKey: ['dentists', 'prioritized'],
+  queryFn: getPrioritizedDentists,
 })
 
 const appointmentsQuery = useQuery({
@@ -409,6 +408,9 @@ async function submitAppointment() {
       <div class="featured-dentist-info">
         <p class="eyebrow">Tu dentista</p>
         <h3>{{ dentistName(primaryDentist) }}</h3>
+        <span v-if="primaryDentist.previouslyVisited" class="status-badge">
+          Ya te atendió
+        </span>
         <p>{{ primaryDentist.specialty ?? 'Odontología general' }}</p>
         <p v-if="primaryDentist.descripcion" class="featured-dentist-description">
           {{ primaryDentist.descripcion }}
@@ -502,6 +504,9 @@ async function submitAppointment() {
 
           <div>
             <h3>{{ dentistName(dentist) }}</h3>
+            <span v-if="dentist.previouslyVisited" class="status-badge">
+              Ya te atendió
+            </span>
             <p>{{ dentist.specialty ?? 'Odontología general' }}</p>
           </div>
         </div>
@@ -597,3 +602,19 @@ async function submitAppointment() {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin: 6px 0 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #e6f7f2;
+  color: #0f766e;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+}
+</style>
