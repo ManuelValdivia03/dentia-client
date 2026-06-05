@@ -339,6 +339,33 @@ function timePartFromDateTime(value: string) {
   return value.slice(11, 16)
 }
 
+function getAppointmentCreateErrorMessage(error: unknown) {
+  const response =
+    typeof error === 'object' && error && 'response' in error
+      ? (error as { response?: { status?: number; data?: { message?: string; error?: string } } }).response
+      : undefined
+
+  const status = response?.status
+  const message = response?.data?.message ?? response?.data?.error
+
+  if (
+    status === 409 ||
+    message === 'Dentist already has an appointment in this time range'
+  ) {
+    return 'El dentista ya tiene una cita en ese horario. Selecciona otro horario.'
+  }
+
+  if (typeof message === 'string' && message.includes('startAt must be in the future')) {
+    return 'Elige una fecha y hora posteriores al momento actual.'
+  }
+
+  if (message === 'startAt must be before endAt') {
+    return 'La hora de inicio debe ser anterior a la hora de fin.'
+  }
+
+  return 'No se pudo agendar la cita. Revisa la fecha y la disponibilidad.'
+}
+
 async function submitAppointment() {
   formError.value = ''
   formSuccess.value = ''
@@ -374,11 +401,7 @@ async function submitAppointment() {
     formSuccess.value = 'Cita agendada correctamente.'
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
   } catch (error: any) {
-    const message = error.response?.data?.message ?? error.response?.data?.error
-    formError.value =
-      typeof message === 'string' && message.includes('startAt must be in the future')
-        ? 'Elige una fecha y hora posteriores al momento actual.'
-        : 'No se pudo agendar la cita. Revisa la fecha y la disponibilidad.'
+    formError.value = getAppointmentCreateErrorMessage(error)
   } finally {
     isCreating.value = false
   }
