@@ -657,43 +657,65 @@ async function submitPrescription() {
       }}
     </div>
 
-    <div v-if="prescriptionTarget" class="card section-card">
-      <div class="page-header compact-header">
-        <div>
-          <p class="eyebrow">Nueva receta</p>
-          <h2>{{ prescriptionTarget.reason ?? 'Cita odontológica' }}</h2>
-        </div>
+    <Teleport to="body">
+      <div
+        v-if="prescriptionTarget"
+        class="modal-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prescription-modal-title"
+      >
+        <section class="modal-card prescription-modal-card">
+          <header class="modal-header">
+            <div>
+              <p class="eyebrow">Nueva receta</p>
+              <h2 id="prescription-modal-title">
+                {{ prescriptionTarget.reason ?? 'Cita odontológica' }}
+              </h2>
+            </div>
+          </header>
 
-        <button class="secondary-button inline-button" type="button" @click="prescriptionTarget = null">
-          Cerrar
-        </button>
+          <form class="modal-form" @submit.prevent="submitPrescription">
+            <label>
+              Diagnóstico
+              <input v-model="diagnosis" required />
+            </label>
+
+            <label>
+              Indicaciones
+              <textarea v-model="indications" rows="3" required />
+            </label>
+
+            <label>
+              Notas
+              <textarea v-model="prescriptionNotes" rows="3" />
+            </label>
+
+            <p v-if="prescriptionError" class="error-message">
+              {{ prescriptionError }}
+            </p>
+
+            <div class="modal-actions">
+              <button
+                class="modal-action-button modal-action-secondary"
+                type="button"
+                @click="prescriptionTarget = null"
+              >
+                Cancelar
+              </button>
+
+              <button
+                class="modal-action-button modal-action-primary"
+                type="submit"
+                :disabled="prescriptionMutation.isPending.value"
+              >
+                {{ prescriptionMutation.isPending.value ? 'Guardando...' : 'Guardar receta' }}
+              </button>
+            </div>
+          </form>
+        </section>
       </div>
-
-      <form @submit.prevent="submitPrescription">
-        <label>
-          Diagnóstico
-          <textarea v-model="diagnosis" rows="3" required />
-        </label>
-
-        <label>
-          Indicaciones
-          <textarea v-model="indications" rows="4" required />
-        </label>
-
-        <label>
-          Notas
-          <textarea v-model="prescriptionNotes" rows="3" />
-        </label>
-
-        <p v-if="prescriptionError" class="error-message">
-          {{ prescriptionError }}
-        </p>
-
-        <button class="primary-button" type="submit" :disabled="prescriptionMutation.isPending.value">
-          Guardar receta
-        </button>
-      </form>
-    </div>
+    </Teleport>
   </AppLayout>
 </template>
 
@@ -785,4 +807,84 @@ async function submitPrescription() {
   background: #e6f7f2;
   color: #0f766e;
 }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgb(15 23 42 / 0.55);
+}
+
+.modal-card {
+  width: min(100%, 620px);
+  border-radius: 24px;
+  background: #fff;
+  padding: 1.5rem;
+  box-shadow: 0 24px 80px rgb(15 23 42 / 0.25);
+}
+
+.prescription-modal-card {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  margin-bottom: 1rem;
+}
+
+.modal-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.modal-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 4rem;
+  border-radius: 18px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.modal-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 4rem;
+  border-radius: 18px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.modal-action-secondary {
+  border: 1px solid #d8e2ec;
+  background: #fff;
+  color: #172033;
+}
+
+.modal-action-primary {
+  border: 1px solid #0f6b85;
+  background: #0f6b85;
+  color: #fff;
+}
+
+.modal-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 </style>
