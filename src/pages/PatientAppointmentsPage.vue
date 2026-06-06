@@ -23,6 +23,7 @@ const rescheduleNotes = ref('')
 const ratingTarget = ref<Appointment | null>(null)
 const ratingScore = ref(5)
 const ratingComment = ref('')
+const ratedAppointmentIds = ref(new Set<string>())
 const ratingOptions = [
   { value: 5, label: 'Excelente', icon: '★★★★★' },
   { value: 4, label: 'Buena', icon: '★★★★☆' },
@@ -30,6 +31,8 @@ const ratingOptions = [
   { value: 2, label: 'Mala', icon: '★★☆☆☆' },
   { value: 1, label: 'Muy mala', icon: '★☆☆☆☆' },
 ]
+const ratingError = ref('')
+const ratingSuccess = ref('')
 const today = getLocalDateValue()
 const rescheduleError = ref('')
 const rescheduleMinTime = computed(
@@ -343,7 +346,15 @@ function canReschedule(appointment: Appointment) {
 }
 
 function canRate(appointment: Appointment) {
-  return normalizeStatus(appointment.status) === 'COMPLETED'
+  return (
+    normalizeStatus(appointment.status) === 'COMPLETED' &&
+    !appointment.hasRating &&
+    !ratedAppointmentIds.value.has(appointment.id)
+  )
+}
+
+function isRated(appointment: Appointment) {
+  return Boolean(appointment.hasRating) || ratedAppointmentIds.value.has(appointment.id)
 }
 
 async function handleCancel(id: string) {
@@ -412,17 +423,103 @@ function openRating(appointment: Appointment) {
   ratingTarget.value = appointment
   ratingScore.value = 5
   ratingComment.value = ''
+  ratingError.value = ''
+  ratingSuccess.value = ''
 }
 
 async function submitRating() {
   if (!ratingTarget.value) return
 
-  await ratingMutation.mutateAsync({
-    appointmentId: ratingTarget.value.id,
-    score: ratingScore.value,
-    comment: ratingComment.value || undefined,
-  })
+  const appointmentId = ratingTarget.value.id
+
+  ratingError.value = ''
+  ratingSuccess.value = ''
+
+  try {
+    await ratingMutation.mutateAsync({
+      appointmentId,
+      score: ratingScore.value,
+      comment: ratingComment.value.trim() || undefined,
+    })
+
+    ratedAppointmentIds.value = new Set([
+      ...ratedAppointmentIds.value,
+      appointmentId,
+    ])
+
+    ratingSuccess.value = 'Valoración enviada correctamente.'
+    ratingTarget.value = null
+    ratingComment.value = ''
+    ratingScore.value = 5
+
+    queryClient.invalidateQueries({ queryKey: ['appointments'] })
+  } catch (error) {
+    const message = getRatingErrorMessage(error)
+    ratingError.value = message
+
+    if (message === 'Esta cita ya fue valorada.') {
+      ratedAppointmentIds.value = new Set([
+        ...ratedAppointmentIds.value,
+        appointmentId,
+      ])
+    }
+  }
 }
+
+function getRatingErrorMessage(error: unknown) {
+  const response =
+    typeof error === 'object' && error && 'response' in error
+      ? (error as { response?: { status?: number; data?: unknown } }).response
+      : undefined
+
+  const status = response?.status
+  const data = response?.data
+
+  const rawMessage =
+    typeof data === 'string'
+      ? data
+      : data && typeof data === 'object' && 'message' in data
+        ? (data as { message?: unknown }).message
+        : data && typeof data === 'object' && 'error' in data
+          ? (data as { error?: unknown }).error
+          : undefined
+
+  const message = Array.isArray(rawMessage)
+    ? rawMessage.join(' ')
+    : typeof rawMessage === 'string'
+      ? rawMessage
+      : ''
+
+  if (
+    status === 409 ||
+    message.includes('Appointment already has a rating') ||
+    message.includes('already has a rating')
+  ) {
+    return 'Esta cita ya fue valorada.'
+  }
+
+  if (message.includes('Only completed appointments can be rated')) {
+    return 'Solo puedes valorar citas completadas.'
+  }
+
+  if (message.includes('Patient can only rate own appointments')) {
+    return 'No puedes valorar una cita que no te pertenece.'
+  }
+
+  if (
+    message.includes('Score must be between 1 and 5') ||
+    message.includes('score must be between 1 and 5')
+  ) {
+    return 'Selecciona una calificación válida.'
+  }
+
+  if (status === 400) {
+    return 'No se pudo enviar la valoración. Revisa los datos e intenta nuevamente.'
+  }
+
+  return 'No se pudo enviar la valoración. Intenta nuevamente.'
+}
+
 </script>
 
 <template>
@@ -499,13 +596,13 @@ async function submitRating() {
                 </button>
 
                 <button
-                  v-if="canRate(appointment)"
+                  v-if="canRate(appointment) || isRated(appointment)"
                   class="secondary-button inline-button"
                   type="button"
-                  :disabled="ratingMutation.isPending.value"
+                  :disabled="ratingMutation.isPending.value || isRated(appointment)"
                   @click="openRating(appointment)"
                 >
-                  Valorar
+                  {{ isRated(appointment) ? 'Valorada' : 'Valorar' }}
                 </button>
 
                 <button
@@ -632,6 +729,10 @@ async function submitRating() {
                   placeholder="Cuéntanos cómo fue tu atención"
                 />
               </label>
+
+              <p v-if="ratingError" class="error-message">
+                {{ ratingError }}
+              </p>
 
               <div class="modal-actions">
                 <button

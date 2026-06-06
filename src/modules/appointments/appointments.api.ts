@@ -16,6 +16,7 @@ export interface Appointment {
   reason?: string
   notes?: string
   status: AppointmentStatus
+  hasRating?:boolean
 }
 
 export interface CreateAppointmentPayload {

@@ -62,6 +62,10 @@ function dentistName(dentist: Dentist) {
   return dentist.fullName ?? dentist.name ?? dentist.email ?? 'Dentista sin nombre'
 }
 
+function formatRating(value: number) {
+  return Number(value || 0).toFixed(1)
+}
+
 function dentistPhotoUrl(dentist: Dentist) {
   const url = dentist.photoUrl
   if (!url) return ''
@@ -113,7 +117,7 @@ function goBack() {
             <h3>{{ displayName }}</h3>
             <p>{{ dentist.specialty ?? 'Odontología general' }}</p>
             <span class="status-pill">
-              {{ ratingAverage.toFixed(1) }} / 5 · {{ ratingTotal }} valoraciones
+              {{ formatRating(ratingAverage) }} / 5 · {{ ratingTotal }} valoraciones
             </span>
           </aside>
 

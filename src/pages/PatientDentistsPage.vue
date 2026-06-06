@@ -163,6 +163,10 @@ const ratingTotal = computed(() => {
   return summary?.totalRatings ?? summary?.ratingsCount ?? summary?.total ?? 0
 })
 
+function formatRating(value: number) {
+  return Number(value || 0).toFixed(1)
+}
+
 watch(appointmentDate, (date) => {
   formError.value = ''
   appointmentTime.value = ''
@@ -617,7 +621,7 @@ async function submitAppointment() {
             <p class="eyebrow">Nueva cita</p>
             <h2>{{ dentistName(selectedDentist) }}</h2>
             <p class="muted-text">
-              {{ ratingAverage.toFixed(1) }} / 5 · {{ ratingTotal }} valoraciones
+              {{ formatRating(ratingAverage) }} / 5 · {{ ratingTotal }} valoraciones
             </p>
           </div>
 
