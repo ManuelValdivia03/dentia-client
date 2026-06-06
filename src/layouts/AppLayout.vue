@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.store'
 import AppLogo from '../components/AppLogo.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const isSidebarCollapsed = ref(false)
 const initials = computed(() => {
   const value = displayName.value ?? 'U'
 
@@ -54,6 +55,10 @@ const roleBadge = computed(() => {
   return 'Usuario'
 })
 
+function toggleSidebar() {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value
+}
+
 function logout() {
   authStore.logout()
   router.push('/login')
@@ -61,8 +66,30 @@ function logout() {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'app-shell-sidebar-collapsed': isSidebarCollapsed }">
     <aside class="sidebar">
+      <button
+        class="sidebar-toggle-button"
+        type="button"
+        :aria-label="isSidebarCollapsed ? 'Expandir menú' : 'Contraer menú'"
+        @click="toggleSidebar"
+      >
+        <svg
+          class="sidebar-toggle-icon"
+          :class="{ 'sidebar-toggle-icon-collapsed': isSidebarCollapsed }"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            d="M15 6L9 12L15 18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
       <div class="sidebar-brand">
         <AppLogo size="lg" />
         <h1>Dentia</h1>
@@ -71,35 +98,39 @@ function logout() {
 
       <nav class="nav">
         <RouterLink v-if="normalizedRole === 'PATIENT'" to="/patient/dentists">
-          Dentistas
+          <span class="nav-link-text">Dentistas</span>
         </RouterLink>
 
         <RouterLink v-if="normalizedRole === 'PATIENT'" to="/patient/appointments">
-          Mis citas
+          <span class="nav-link-text">Mis citas</span>
         </RouterLink>
 
         <RouterLink v-if="normalizedRole === 'PATIENT'" to="/patient/history">
-          Historial
+          <span class="nav-link-text">Historial</span>
         </RouterLink>
 
         <RouterLink v-if="normalizedRole === 'PATIENT'" to="/chat">
-          Chat
+          <span class="nav-link-text">Chat</span>
         </RouterLink>
 
         <RouterLink v-if="normalizedRole === 'DENTIST'" to="/dentist/dashboard">
-          Dashboard
+          <span class="nav-link-text">Dashboard</span>
         </RouterLink>
 
         <RouterLink v-if="normalizedRole === 'DENTIST'" to="/dentist/agenda">
-          Mi agenda
+          <span class="nav-link-text">Mi agenda</span>
         </RouterLink>
 
         <RouterLink v-if="normalizedRole === 'DENTIST'" to="/chat">
-          Chat
+          <span class="nav-link-text">Chat</span>
+        </RouterLink>
+
+        <RouterLink v-if="normalizedRole === 'DENTIST'" to="/dentist/ratings">
+          <span class="nav-link-text">Valoraciones</span>
         </RouterLink>
 
         <RouterLink v-if="normalizedRole === 'ADMIN'" to="/admin/dashboard">
-          Administración
+          <span class="nav-link-text">Administración</span>
         </RouterLink>
       </nav>
 
