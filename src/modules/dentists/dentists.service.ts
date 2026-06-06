@@ -8,6 +8,16 @@ export interface DentistRatingsSummary {
   totalRatings?: number
   total?: number
   ratingsCount?: number
+  latestRatings?: DentistRatingItem[]
+}
+
+export interface DentistRatingItem {
+  id: string
+  appointmentId: string
+  patientId: string
+  score: number
+  comment?: string
+  createdAt: string
 }
 
 export async function getDentists(): Promise<Dentist[]> {

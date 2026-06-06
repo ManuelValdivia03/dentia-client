@@ -48,14 +48,18 @@ const photoUrl = computed(() => {
   return dentistPhotoUrl(dentist.value)
 })
 
+const ratingsSummary = computed(() => ratingsQuery.data.value)
+
 const ratingAverage = computed(() => {
-  const summary = ratingsQuery.data.value
-  return summary?.averageScore ?? summary?.average ?? 0
+  return Number(ratingsSummary.value?.averageScore ?? 0)
 })
 
 const ratingTotal = computed(() => {
-  const summary = ratingsQuery.data.value
-  return summary?.totalRatings ?? summary?.ratingsCount ?? summary?.total ?? 0
+  return Number(ratingsSummary.value?.totalRatings ?? 0)
+})
+
+const latestRatings = computed(() => {
+  return ratingsSummary.value?.latestRatings ?? []
 })
 
 function dentistName(dentist: Dentist) {
@@ -64,6 +68,12 @@ function dentistName(dentist: Dentist) {
 
 function formatRating(value: number) {
   return Number(value || 0).toFixed(1)
+}
+
+function formatRatingDate(value: string) {
+  return new Intl.DateTimeFormat('es-MX', {
+    dateStyle: 'medium',
+  }).format(new Date(value))
 }
 
 function dentistPhotoUrl(dentist: Dentist) {
@@ -102,55 +112,150 @@ function goBack() {
           No se pudo cargar la información del dentista.
         </p>
 
-        <div v-else-if="dentist" class="profile-grid">
-          <aside class="card profile-summary">
-            <div class="profile-photo-preview">
-              <img
-                v-if="photoUrl"
-                :src="photoUrl"
-                :alt="`Foto de ${displayName}`"
-                @error="photoFailed = true"
-              />
-              <span v-else>{{ initials }}</span>
+        <div v-else-if="dentist" class="profile-detail-content">
+          <div class="profile-grid">
+            <aside class="card profile-summary">
+              <div class="profile-photo-preview">
+                <img
+                  v-if="photoUrl"
+                  :src="photoUrl"
+                  :alt="`Foto de ${displayName}`"
+                  @error="photoFailed = true"
+                />
+                <span v-else>{{ initials }}</span>
+              </div>
+
+              <h3>{{ displayName }}</h3>
+              <p>{{ dentist.specialty ?? 'Odontología general' }}</p>
+
+              <span class="status-pill">
+                {{ formatRating(ratingAverage) }} / 5 · {{ ratingTotal }}
+                {{ ratingTotal === 1 ? 'valoración' : 'valoraciones' }}
+              </span>
+            </aside>
+
+            <section class="card">
+              <div class="details-list">
+                <div>
+                  <span>Correo</span>
+                  <strong>{{ dentist.email ?? 'No registrado' }}</strong>
+                </div>
+
+                <div>
+                  <span>Especialidad</span>
+                  <strong>{{ dentist.specialty ?? 'Odontología general' }}</strong>
+                </div>
+
+                <div>
+                  <span>Cédula profesional</span>
+                  <strong>{{ dentist.cedulaProfesional ?? 'No registrada' }}</strong>
+                </div>
+
+                <div>
+                  <span>Escuela</span>
+                  <strong>{{ dentist.escuela ?? 'No registrada' }}</strong>
+                </div>
+
+                <div class="details-list-wide">
+                  <span>Descripción</span>
+                  <strong>{{ dentist.descripcion ?? 'Sin descripción registrada.' }}</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="card dentist-ratings-preview">
+            <div class="compact-header">
+              <div>
+                <p class="eyebrow">Opiniones</p>
+                <h3>Últimos comentarios</h3>
+              </div>
             </div>
 
-            <h3>{{ displayName }}</h3>
-            <p>{{ dentist.specialty ?? 'Odontología general' }}</p>
-            <span class="status-pill">
-              {{ formatRating(ratingAverage) }} / 5 · {{ ratingTotal }} valoraciones
-            </span>
-          </aside>
+            <p v-if="ratingsQuery.isLoading.value" class="muted-text">
+              Cargando valoraciones...
+            </p>
 
-          <section class="card">
-            <div class="details-list">
-              <div>
-                <span>Correo</span>
-                <strong>{{ dentist.email ?? 'No registrado' }}</strong>
-              </div>
+            <p v-else-if="ratingsQuery.isError.value" class="error-message">
+              No se pudieron cargar las valoraciones.
+            </p>
 
-              <div>
-                <span>Especialidad</span>
-                <strong>{{ dentist.specialty ?? 'Odontología general' }}</strong>
-              </div>
+            <div v-else-if="latestRatings.length" class="dentist-rating-list">
+              <article
+                v-for="rating in latestRatings"
+                :key="rating.id"
+                class="dentist-rating-item"
+              >
+                <div class="dentist-rating-header">
+                  <strong>{{ rating.score }} / 5</strong>
+                  <span>Paciente</span>
+                </div>
 
-              <div>
-                <span>Cédula profesional</span>
-                <strong>{{ dentist.cedulaProfesional ?? 'No registrada' }}</strong>
-              </div>
+                <p>{{ rating.comment || 'Sin comentario.' }}</p>
 
-              <div>
-                <span>Escuela</span>
-                <strong>{{ dentist.escuela ?? 'No registrada' }}</strong>
-              </div>
-
-              <div class="details-list-wide">
-                <span>Descripción</span>
-                <strong>{{ dentist.descripcion ?? 'Sin descripción registrada.' }}</strong>
-              </div>
+                <small>{{ formatRatingDate(rating.createdAt) }}</small>
+              </article>
             </div>
+
+            <p v-else class="muted-text">
+              Este dentista aún no tiene comentarios.
+            </p>
           </section>
         </div>
       </section>
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.profile-detail-content {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.dentist-ratings-preview {
+  display: grid;
+  gap: 1rem;
+}
+
+.dentist-rating-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.dentist-rating-item {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem;
+  background: #fbfdff;
+}
+
+.dentist-rating-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.dentist-rating-header strong {
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.dentist-rating-header span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.dentist-rating-item p {
+  margin: 0.5rem 0;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.dentist-rating-item small {
+  color: var(--muted);
+  font-weight: 700;
+}
+</style>
