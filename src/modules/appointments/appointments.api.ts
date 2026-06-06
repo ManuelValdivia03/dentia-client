@@ -50,6 +50,7 @@ export interface CreateRatingPayload {
 
 export async function getAppointments() {
   const { data } = await api.get<Appointment[]>('/appointments')
+
   return data
 }
 
@@ -73,11 +74,11 @@ export async function getAppointmentAvailability(
 }
 
 export async function getDentistDayAgenda(date: string) {
-  const { data } = await api.get('/appointments/day', {
+  const { data } = await api.get<Appointment[]>('/appointments/day', {
     params: { date },
-  });
+  })
 
-  return data;
+  return data
 }
 
 export async function createAppointment(payload: CreateAppointmentPayload) {

@@ -68,9 +68,10 @@ const AGENDA_PATH = '/dentist/agenda'
 function agendaLink(status?: string) {
   return {
     path: AGENDA_PATH,
-    query: status
-      ? { scope: 'all', status }
-      : { scope: 'all' },
+    query: {
+      scope: 'all',
+      ...(status ? { status } : {}),
+    },
   }
 }
 
@@ -91,7 +92,6 @@ function statusLabel(status: string) {
     CONFIRMED: 'Confirmadas',
     CANCELLED: 'Canceladas',
     COMPLETED: 'Completadas',
-    NO_SHOW: 'No asistieron',
   }
 
   return labels[normalizeStatus(status)] ?? status

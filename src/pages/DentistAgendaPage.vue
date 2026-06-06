@@ -6,6 +6,7 @@ import {
   cancelAppointment,
   completeAppointment,
   confirmAppointment,
+  getAppointments,
   getDentistDayAgenda,
   type Appointment,
 } from '../modules/appointments/appointments.api'
@@ -18,7 +19,8 @@ import { useRoute, useRouter } from 'vue-router'
 
 const queryClient = useQueryClient()
 
-const selectedDate = ref(new Date().toISOString().slice(0, 10))
+const selectedDate = ref(getLocalDateValue(new Date()))
+const calendarInputRef = ref<HTMLInputElement | null>(null)
 const prescriptionTarget = ref<Appointment | null>(null)
 const diagnosis = ref('')
 const indications = ref('')
@@ -28,10 +30,47 @@ const prescriptionError = ref('')
 const route = useRoute()
 const router = useRouter()
 
+const showAllAppointments = ref(
+  route.query.scope === 'all',
+)
+
+watch(
+  () => route.query.scope,
+  (scope) => {
+    showAllAppointments.value = scope === 'all'
+  },
+)
+
+const selectedStatus = ref(
+  typeof route.query.status === 'string'
+    ? normalizeStatus(route.query.status)
+    : '',
+)
+
+watch(
+  () => route.query.status,
+  (status) => {
+    selectedStatus.value =
+      typeof status === 'string' ? normalizeStatus(status) : ''
+  },
+)
+
 const appointmentsQuery = useQuery({
-  queryKey: computed(() => ['appointments', 'day', selectedDate.value]),
-  queryFn: () => getDentistDayAgenda(selectedDate.value),
+  queryKey: computed(() => [
+    'appointments',
+    'dentist-agenda',
+    showAllAppointments.value ? 'all' : selectedDate.value,
+  ]),
+  queryFn: () => {
+    if (showAllAppointments.value) {
+      return getAppointments()
+    }
+
+    return getDentistDayAgenda(selectedDate.value)
+  },
 })
+
+const selectedDateLabel = computed(() => formatAgendaDate(selectedDate.value))
 
 const confirmMutation = useMutation({
   mutationFn: confirmAppointment,
@@ -65,10 +104,12 @@ const prescriptionMutation = useMutation({
 })
 
 const appointments = computed(() => {
+  const status = selectedStatus.value
+
   return [...(appointmentsQuery.data.value ?? [])]
     .filter((appointment) => {
-      if (!selectedStatus.value) return true
-      return normalizeStatus(appointment.status) === selectedStatus.value
+      if (!status) return true
+      return normalizeStatus(appointment.status) === status
     })
     .sort((a, b) => {
       return new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
@@ -110,10 +151,10 @@ function normalizeStatus(status: string) {
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
-    PENDING: 'Pendiente',
-    CONFIRMED: 'Confirmada',
-    CANCELLED: 'Cancelada',
-    COMPLETED: 'Completada',
+    PENDING: 'Pendientes',
+    CONFIRMED: 'Confirmadas',
+    CANCELLED: 'Canceladas',
+    COMPLETED: 'Completadas',
   }
 
   return labels[normalizeStatus(status)] ?? status
@@ -123,13 +164,35 @@ function statusClass(status: string) {
   return `status-${normalizeStatus(status).toLowerCase()}`
 }
 
-function formatDay(value: string) {
-  return new Date(value).toLocaleDateString('es-MX', {
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function parseLocalDateValue(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function formatAgendaDate(value: string) {
+  const date = parseLocalDateValue(value)
+
+  const weekday = new Intl.DateTimeFormat('es-MX', {
     weekday: 'long',
-    day: 'numeric',
+  }).format(date)
+
+  const day = new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+  }).format(date)
+
+  const month = new Intl.DateTimeFormat('es-MX', {
     month: 'long',
-    year: 'numeric',
-  })
+  }).format(date)
+
+  return `${weekday} ${day} de ${capitalize(month)}`
+}
+
+function formatDay(value: string) {
+  return formatAgendaDate(getLocalDateValue(new Date(value)))
 }
 
 const statusFilterOptions = [
@@ -146,21 +209,12 @@ function updateStatusFilter(status: string) {
   router.replace({
     query: {
       ...route.query,
+      scope: showAllAppointments.value ? 'all' : undefined,
       status: status || undefined,
     },
   })
 }
 
-const selectedStatus = ref(
-  typeof route.query.status === 'string' ? route.query.status.toUpperCase() : '',
-)
-
-watch(
-  () => route.query.status,
-  (status) => {
-    selectedStatus.value = typeof status === 'string' ? status.toUpperCase() : ''
-  },
-)
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString('es-MX', {
@@ -179,6 +233,63 @@ function getLocalDateValue(date: Date) {
   const day = String(date.getDate()).padStart(2, '0')
 
   return `${year}-${month}-${day}`
+}
+
+function addDays(value: string, days: number) {
+  const date = parseLocalDateValue(value)
+  date.setDate(date.getDate() + days)
+  return getLocalDateValue(date)
+}
+
+function goToPreviousDate() {
+  selectedDate.value = addDays(selectedDate.value, -1)
+  showAllAppointments.value = false
+
+  router.replace({
+    query: {
+      ...route.query,
+      scope: undefined,
+    },
+  })
+}
+
+function goToNextDate() {
+  selectedDate.value = addDays(selectedDate.value, 1)
+  showAllAppointments.value = false
+
+  router.replace({
+    query: {
+      ...route.query,
+      scope: undefined,
+    },
+  })
+}
+
+function handleCalendarChange() {
+  showAllAppointments.value = false
+
+  router.replace({
+    query: {
+      ...route.query,
+      scope: undefined,
+    },
+  })
+}
+
+function openCalendar() {
+  calendarInputRef.value?.showPicker?.()
+  calendarInputRef.value?.click()
+}
+
+function toggleShowAllAppointments() {
+  showAllAppointments.value = !showAllAppointments.value
+
+  router.replace({
+    query: {
+      ...route.query,
+      scope: showAllAppointments.value ? 'all' : undefined,
+    },
+  })
 }
 
 function groupAppointmentsByDay(appointments: Appointment[]) {
@@ -362,10 +473,46 @@ async function submitPrescription() {
         <h2>Mi agenda</h2>
       </div>
 
-      <label class="date-filter">
-        Fecha
-        <input v-model="selectedDate" type="date" />
-      </label>
+      <div class="agenda-date-controls" aria-label="Controles de fecha de agenda">
+        <button
+          class="date-nav-button"
+          type="button"
+          aria-label="Día anterior"
+          @click="goToPreviousDate"
+        >
+          ‹
+        </button>
+
+        <span class="selected-date-pill">
+          {{ showAllAppointments ? 'Todas las citas' : selectedDateLabel }}
+        </span>
+
+        <button
+          class="date-nav-button"
+          type="button"
+          aria-label="Día siguiente"
+          @click="goToNextDate"
+        >
+          ›
+        </button>
+
+        <button class="secondary-button inline-button" type="button" @click="openCalendar">
+          Calendario
+        </button>
+
+        <input
+          ref="calendarInputRef"
+          v-model="selectedDate"
+          class="native-date-input"
+          type="date"
+          aria-label="Seleccionar fecha"
+          @change="handleCalendarChange"
+        />
+
+        <button class="secondary-button inline-button" type="button" @click="toggleShowAllAppointments">
+          {{ showAllAppointments ? 'Ver por fecha' : 'Ver todas' }}
+        </button>
+      </div>
     </div>
 
     <p class="helper-text">
@@ -503,8 +650,10 @@ async function submitPrescription() {
     <div v-else class="empty-state">
       {{
         selectedStatus
-          ? `No tienes citas ${statusLabel(selectedStatus).toLowerCase()} para esta fecha.`
-          : 'No tienes citas asignadas para esta fecha.'
+          ? `No tienes citas ${statusLabel(selectedStatus).toLowerCase()} ${showAllAppointments ? '' : 'para esta fecha'}.`
+          : showAllAppointments
+            ? 'No tienes citas asignadas.'
+            : 'No tienes citas asignadas para esta fecha.'
       }}
     </div>
 
@@ -549,6 +698,53 @@ async function submitPrescription() {
 </template>
 
 <style scoped>
+
+.agenda-date-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.date-nav-button {
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.date-nav-button:hover {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
+.selected-date-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.4rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.native-date-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .request-badge {
   display: inline-flex;
   align-items: center;
