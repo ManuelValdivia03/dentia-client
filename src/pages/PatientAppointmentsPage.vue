@@ -23,6 +23,13 @@ const rescheduleNotes = ref('')
 const ratingTarget = ref<Appointment | null>(null)
 const ratingScore = ref(5)
 const ratingComment = ref('')
+const ratingOptions = [
+  { value: 5, label: 'Excelente', icon: '★★★★★' },
+  { value: 4, label: 'Buena', icon: '★★★★☆' },
+  { value: 3, label: 'Regular', icon: '★★★☆☆' },
+  { value: 2, label: 'Mala', icon: '★★☆☆☆' },
+  { value: 1, label: 'Muy mala', icon: '★☆☆☆☆' },
+]
 const today = getLocalDateValue()
 const rescheduleError = ref('')
 const rescheduleMinTime = computed(
@@ -580,37 +587,184 @@ async function submitRating() {
         </form>
       </section>
     </div>
+      <Teleport to="body">
+        <div
+          v-if="ratingTarget"
+          class="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rating-modal-title"
+        >
+          <section class="modal-card">
+            <header class="modal-header">
+              <div>
+                <p class="eyebrow">Valorar</p>
+                <h2 id="rating-modal-title">
+                  {{ ratingTarget.reason ?? 'Cita odontológica' }}
+                </h2>
+              </div>
+            </header>
 
-    <div v-if="ratingTarget" class="card section-card">
-      <div class="page-header compact-header">
-        <div>
-          <p class="eyebrow">Valoración</p>
-          <h2>{{ ratingTarget.reason ?? 'Cita odontológica' }}</h2>
+            <form class="modal-form" @submit.prevent="submitRating">
+              <div class="rating-field">
+                <span class="rating-label">Calificación</span>
+
+                <div class="rating-options">
+                  <button
+                    v-for="option in ratingOptions"
+                    :key="option.value"
+                    class="rating-option"
+                    :class="{ 'rating-option-active': ratingScore === option.value }"
+                    type="button"
+                    @click="ratingScore = option.value"
+                  >
+                    <span class="rating-icon">{{ option.icon }}</span>
+                    <span class="rating-text">{{ option.label }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <label>
+                Comentario
+                <textarea
+                  v-model="ratingComment"
+                  rows="3"
+                  placeholder="Cuéntanos cómo fue tu atención"
+                />
+              </label>
+
+              <div class="modal-actions">
+                <button
+                  class="modal-action-button modal-action-secondary"
+                  type="button"
+                  @click="ratingTarget = null"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  class="modal-action-button modal-action-primary"
+                  type="submit"
+                  :disabled="ratingMutation.isPending.value"
+                >
+                  {{ ratingMutation.isPending.value ? 'Enviando...' : 'Enviar valoración' }}
+                </button>
+              </div>
+            </form>
+          </section>
         </div>
-        <button class="secondary-button inline-button" type="button" @click="ratingTarget = null">
-          Cerrar
-        </button>
-      </div>
-
-      <form @submit.prevent="submitRating">
-        <label>
-          Calificación
-          <select v-model.number="ratingScore">
-            <option :value="5">5</option>
-            <option :value="4">4</option>
-            <option :value="3">3</option>
-            <option :value="2">2</option>
-            <option :value="1">1</option>
-          </select>
-        </label>
-        <label>
-          Comentario
-          <textarea v-model="ratingComment" rows="3" placeholder="Cuéntanos cómo fue tu atención" />
-        </label>
-        <button class="primary-button" type="submit" :disabled="ratingMutation.isPending.value">
-          Enviar valoración
-        </button>
-      </form>
-    </div>
+      </Teleport>
   </AppLayout>
 </template>
+
+<style scoped>
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgb(15 23 42 / 0.55);
+}
+
+.modal-card {
+  width: min(100%, 520px);
+  max-height: none;
+  overflow: visible;
+  border-radius: 24px;
+  background: #fff;
+  padding: 1.25rem;
+  box-shadow: 0 24px 80px rgb(15 23 42 / 0.25);
+}
+
+.modal-header {
+  margin-bottom: 1rem;
+}
+
+.modal-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.rating-field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.rating-label {
+  color: #172033;
+  font-weight: 800;
+}
+
+.rating-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.rating-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid #d8e2ec;
+  border-radius: 18px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.rating-option-active {
+  border-color: #0f6b85;
+  background: #eaf7f8;
+  color: #0f6b85;
+}
+
+.rating-icon {
+  letter-spacing: 0.08em;
+}
+
+.rating-text {
+  white-space: nowrap;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.modal-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 3.75rem;
+  border-radius: 18px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.modal-action-secondary {
+  border: 1px solid #d8e2ec;
+  background: #fff;
+  color: #172033;
+}
+
+.modal-action-primary {
+  border: 1px solid #0f6b85;
+  background: #0f6b85;
+  color: #fff;
+}
+
+.modal-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+</style>
