@@ -16,7 +16,60 @@ const isSaving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
+const photoInput = ref<HTMLInputElement | null>(null)
+
+const initialProfile = ref({
+  fullName: (authStore.user?.fullName ?? authStore.user?.name ?? '').trim(),
+  specialty: (authStore.user?.specialty ?? '').trim(),
+  escuela: (authStore.user?.escuela ?? '').trim(),
+  descripcion: (authStore.user?.descripcion ?? '').trim(),
+})
+
 const isDentist = computed(() => authStore.role === 'DENTIST')
+
+const hasProfileChanges = computed(() => {
+  if (photo.value) {
+    return true
+  }
+
+  if (fullName.value.trim() !== initialProfile.value.fullName) {
+    return true
+  }
+
+  if (!isDentist.value) {
+    return false
+  }
+
+  return (
+    specialty.value.trim() !== initialProfile.value.specialty ||
+    escuela.value.trim() !== initialProfile.value.escuela ||
+    descripcion.value.trim() !== initialProfile.value.descripcion
+  )
+})
+
+const profileName = computed(
+  () => fullName.value || authStore.user?.email || 'Usuario',
+)
+
+const profileEmail = computed(
+  () => authStore.user?.email ?? 'Correo no registrado',
+)
+
+const roleLabel = computed(() => {
+  const labels: Record<string, string> = {
+    PATIENT: 'Paciente',
+    DENTIST: 'Dentista',
+    ADMIN: 'Administrador',
+  }
+
+  return labels[authStore.role ?? ''] ?? authStore.role
+})
+
+const profileSafeNote = computed(() =>
+  isDentist.value
+    ? 'Correo, contraseña y cédula profesional no se editan desde esta ventana.'
+    : 'Correo y contraseña no se editan desde esta ventana.',
+)
 
 const photoUrl = computed(() => {
   const url = authStore.user?.photoUrl
@@ -41,24 +94,44 @@ const initials = computed(() => {
 function onPhotoChange(event: Event) {
   const input = event.target as HTMLInputElement
   photo.value = input.files?.[0] ?? null
+  successMessage.value = ''
+  errorMessage.value = ''
 }
 
 async function saveProfile() {
   errorMessage.value = ''
   successMessage.value = ''
+
+  if (!hasProfileChanges.value) {
+    successMessage.value = 'No hay cambios por guardar.'
+    return
+  }
+
   isSaving.value = true
 
   try {
+    const nextProfile = {
+      fullName: fullName.value.trim(),
+      specialty: specialty.value.trim(),
+      escuela: escuela.value.trim(),
+      descripcion: descripcion.value.trim(),
+    }
+
     await authStore.updateProfile({
-      fullName: fullName.value,
-      specialty: isDentist.value ? specialty.value || undefined : undefined,
-      escuela: isDentist.value ? escuela.value || undefined : undefined,
-      descripcion: isDentist.value ? descripcion.value || undefined : undefined,
+      fullName: nextProfile.fullName,
+      specialty: isDentist.value ? nextProfile.specialty || undefined : undefined,
+      escuela: isDentist.value ? nextProfile.escuela || undefined : undefined,
+      descripcion: isDentist.value ? nextProfile.descripcion || undefined : undefined,
       photo: photo.value,
     })
 
+    initialProfile.value = nextProfile
     successMessage.value = 'Perfil actualizado correctamente.'
     photo.value = null
+
+    if (photoInput.value) {
+      photoInput.value.value = ''
+    }
   } catch (error: any) {
     const responseMessage =
       error.response?.data?.message ??
@@ -90,10 +163,6 @@ function closeProfile() {
             <p class="eyebrow">Mi cuenta</p>
             <h2>Perfil</h2>
           </div>
-
-          <button class="secondary-button inline-button" type="button" @click="closeProfile">
-            Cerrar
-          </button>
         </div>
 
         <div class="profile-grid">
@@ -103,12 +172,12 @@ function closeProfile() {
               <span v-else>{{ initials }}</span>
             </div>
 
-            <h3>{{ authStore.user?.fullName ?? authStore.user?.email }}</h3>
-            <p>{{ authStore.user?.email }}</p>
-            <span class="badge">{{ authStore.role }}</span>
+            <h3>{{ profileName }}</h3>
+            <p>{{ profileEmail }}</p>
+            <span class="badge">{{ roleLabel }}</span>
 
             <div class="profile-safe-note">
-              Correo, contraseña y cédula profesional no se editan desde esta ventana.
+              {{ profileSafeNote }}
             </div>
           </aside>
 
@@ -123,8 +192,18 @@ function closeProfile() {
                 </label>
 
                 <label>
+                  Correo electrónico
+                  <input :value="profileEmail" type="email" disabled />
+                </label>
+
+                <label>
+                  Tipo de cuenta
+                  <input :value="roleLabel" type="text" disabled />
+                </label>
+
+                <label>
                   Foto de perfil
-                  <input type="file" accept="image/jpeg,image/png,image/webp" @change="onPhotoChange" />
+                  <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp" @change="onPhotoChange"/>
                 </label>
               </fieldset>
 
@@ -150,9 +229,23 @@ function closeProfile() {
               <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
               <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
 
-              <button class="primary-button" type="submit" :disabled="isSaving">
-                {{ isSaving ? 'Guardando...' : 'Guardar perfil' }}
-              </button>
+              <div class="profile-actions">
+                <button
+                  class="profile-action-button profile-action-secondary"
+                  type="button"
+                  @click="closeProfile"
+                >
+                  Cerrar
+                </button>
+
+                <button
+                  class="profile-action-button profile-action-primary"
+                  type="submit"
+                  :disabled="isSaving || !hasProfileChanges"
+                >
+                  {{ isSaving ? 'Guardando...' : hasProfileChanges ? 'Guardar perfil' : 'Sin cambios' }}
+                </button>
+              </div>
             </form>
           </section>
         </div>
@@ -160,3 +253,44 @@ function closeProfile() {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.profile-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding-top: 1rem;
+  background: #fff;
+}
+
+.profile-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 4rem;
+  width: 100%;
+  border-radius: 18px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.profile-action-secondary {
+  border: 1px solid #d8e2ec;
+  background: #fff;
+  color: #172033;
+}
+
+.profile-action-primary {
+  border: 1px solid #0f6b85;
+  background: #0f6b85;
+  color: #fff;
+}
+
+.profile-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+</style>
