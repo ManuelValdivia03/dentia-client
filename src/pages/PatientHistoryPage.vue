@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import AppLayout from '../layouts/AppLayout.vue'
 import { getAppointments, type Appointment } from '../modules/appointments/appointments.api'
@@ -16,6 +16,8 @@ import {
   type Prescription,
 } from '../modules/prescriptions/prescriptions.api'
 import { useAuthStore } from '../stores/auth.store'
+import { getDentists } from '../modules/dentists/dentists.service'
+import type { Dentist } from '../modules/dentists/dentists.types'
 
 const authStore = useAuthStore()
 const queryClient = useQueryClient()
@@ -57,6 +59,28 @@ function completedAppointments() {
   return (appointmentsQuery.data.value ?? []).filter((appointment) => {
     return normalizeStatus(appointment.status) === 'COMPLETED'
   })
+}
+
+const dentistsQuery = useQuery({
+  queryKey: ['dentists'],
+  queryFn: getDentists,
+})
+
+const dentistNameById = computed(() => {
+  return new Map(
+    (dentistsQuery.data.value ?? []).map((dentist) => [
+      dentist.domainId,
+      dentistName(dentist),
+    ]),
+  )
+})
+
+function dentistName(dentist: Dentist) {
+  return dentist.fullName ?? dentist.name ?? dentist.email ?? dentist.domainId
+}
+
+function dentistDisplayName(dentistId: string) {
+  return dentistNameById.value.get(dentistId) ?? dentistId
 }
 
 function fileId(file: ClinicalFile) {
@@ -162,7 +186,7 @@ async function downloadPrescription(prescription: Prescription) {
             </div>
           </div>
 
-          <p><strong>Dentista:</strong> {{ appointment.dentistId }}</p>
+          <p><strong>Dentista:</strong> {{ dentistDisplayName(appointment.dentistId) }}</p>
 
           <div class="card-actions">
             <button class="secondary-button inline-button" type="button" @click="loadPrescriptions(appointment)">
