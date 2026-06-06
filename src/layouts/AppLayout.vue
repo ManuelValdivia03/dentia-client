@@ -6,11 +6,6 @@ import AppLogo from '../components/AppLogo.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-
-const displayName = computed(() => {
-  return authStore.user?.fullName ?? authStore.user?.name ?? authStore.user?.email
-})
-
 const initials = computed(() => {
   const value = displayName.value ?? 'U'
 
@@ -21,7 +16,6 @@ const initials = computed(() => {
     .map((part) => part.charAt(0).toUpperCase())
     .join('')
 })
-
 const photoUrl = computed(() => {
   const url = authStore.user?.photoUrl
   if (!url) return ''
@@ -30,6 +24,34 @@ const photoUrl = computed(() => {
 
   const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
   return `${baseUrl}${url}`
+})
+const normalizedRole = computed(() =>
+  String(authStore.role ?? authStore.user?.role ?? '').toUpperCase(),
+)
+
+const displayName = computed(() => {
+  return (
+    authStore.user?.fullName ??
+    authStore.user?.name ??
+    authStore.user?.email ??
+    'Usuario'
+  )
+})
+
+const roleLabel = computed(() => {
+  if (normalizedRole.value === 'PATIENT') return 'Portal de Pacientes'
+  if (normalizedRole.value === 'DENTIST') return 'Panel clínico'
+  if (normalizedRole.value === 'ADMIN') return 'Administración'
+
+  return 'Dentia'
+})
+
+const roleBadge = computed(() => {
+  if (normalizedRole.value === 'PATIENT') return 'Paciente'
+  if (normalizedRole.value === 'DENTIST') return 'Dentista'
+  if (normalizedRole.value === 'ADMIN') return 'Administrador'
+
+  return 'Usuario'
 })
 
 function logout() {
@@ -42,41 +64,42 @@ function logout() {
   <div class="app-shell">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <AppLogo size="md" />
-        <p>Panel clínico</p>
+        <AppLogo size="lg" />
+        <h1>Dentia</h1>
+        <p>{{ roleLabel }}</p>
       </div>
 
       <nav class="nav">
-        <RouterLink v-if="authStore.role === 'PATIENT'" to="/patient/dentists">
+        <RouterLink v-if="normalizedRole === 'PATIENT'" to="/patient/dentists">
           Dentistas
         </RouterLink>
 
-        <RouterLink v-if="authStore.role === 'PATIENT'" to="/patient/appointments">
+        <RouterLink v-if="normalizedRole === 'PATIENT'" to="/patient/appointments">
           Mis citas
         </RouterLink>
 
-        <RouterLink v-if="authStore.role === 'PATIENT'" to="/patient/history">
+        <RouterLink v-if="normalizedRole === 'PATIENT'" to="/patient/history">
           Historial
         </RouterLink>
 
-        <RouterLink v-if="authStore.role === 'DENTIST'" to="/dentist/dashboard">
-          Dashboard
-        </RouterLink>
-
-        <RouterLink v-if="authStore.role === 'DENTIST'" to="/dentist/agenda">
-          Mi agenda
-        </RouterLink>
-
-        <RouterLink v-if="authStore.role === 'ADMIN'" to="/admin/dashboard">
-          Administración
-        </RouterLink>
-
-        <RouterLink to="/chat">
+        <RouterLink v-if="normalizedRole === 'PATIENT'" to="/chat">
           Chat
         </RouterLink>
 
-        <RouterLink to="/profile">
-          Perfil
+        <RouterLink v-if="normalizedRole === 'DENTIST'" to="/dentist/dashboard">
+          Dashboard
+        </RouterLink>
+
+        <RouterLink v-if="normalizedRole === 'DENTIST'" to="/dentist/agenda">
+          Mi agenda
+        </RouterLink>
+
+        <RouterLink v-if="normalizedRole === 'DENTIST'" to="/chat">
+          Chat
+        </RouterLink>
+
+        <RouterLink v-if="normalizedRole === 'ADMIN'" to="/admin/dashboard">
+          Administración
         </RouterLink>
       </nav>
 
@@ -89,7 +112,7 @@ function logout() {
       <header class="topbar">
         <div class="topbar-user">
           <strong>{{ displayName }}</strong>
-          <span>{{ authStore.role }}</span>
+          <span>{{ roleBadge }}</span>
         </div>
 
         <RouterLink class="profile-orb" to="/profile" aria-label="Abrir perfil">
