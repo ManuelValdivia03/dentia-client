@@ -15,6 +15,28 @@ import type { Dentist } from '../modules/dentists/dentists.types'
 
 const queryClient = useQueryClient()
 
+type AppointmentFilter =
+  | 'all'
+  | 'upcoming'
+  | 'pending'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+
+const selectedAppointmentFilter = ref<AppointmentFilter>('all')
+
+const appointmentFilterOptions: Array<{
+  value: AppointmentFilter
+  label: string
+}> = [
+  { value: 'all', label: 'Todas' },
+  { value: 'upcoming', label: 'Próximas' },
+  { value: 'pending', label: 'Pendientes' },
+  { value: 'confirmed', label: 'Confirmadas' },
+  { value: 'completed', label: 'Completadas' },
+  { value: 'cancelled', label: 'Canceladas' },
+]
+
 const rescheduleTarget = ref<Appointment | null>(null)
 const rescheduleDate = ref('')
 const rescheduleTime = ref('')
@@ -71,8 +93,58 @@ const rescheduleAvailabilityQuery = useQuery({
   ),
 })
 
+const appointments = computed(() => appointmentsQuery.data.value ?? [])
+
+const filteredAppointments = computed(() => {
+  return appointments.value.filter((appointment) => {
+    const status = normalizeStatus(appointment.status)
+
+    if (selectedAppointmentFilter.value === 'all') {
+      return true
+    }
+
+    if (selectedAppointmentFilter.value === 'upcoming') {
+      return (
+        (status === 'PENDING' || status === 'CONFIRMED') &&
+        new Date(appointment.startAt).getTime() >= Date.now()
+      )
+    }
+
+    if (selectedAppointmentFilter.value === 'pending') {
+      return status === 'PENDING'
+    }
+
+    if (selectedAppointmentFilter.value === 'confirmed') {
+      return status === 'CONFIRMED'
+    }
+
+    if (selectedAppointmentFilter.value === 'completed') {
+      return status === 'COMPLETED'
+    }
+
+    if (selectedAppointmentFilter.value === 'cancelled') {
+      return status === 'CANCELLED'
+    }
+
+    return true
+  })
+})
+
 const appointmentGroups = computed(() => {
-  return groupAppointmentsByDay(appointmentsQuery.data.value ?? [])
+  return groupAppointmentsByDay(filteredAppointments.value)
+})
+
+const emptyAppointmentsMessage = computed(() => {
+  const labels: Record<AppointmentFilter, string> = {
+    all: 'No tienes citas registradas.',
+    upcoming: 'No tienes próximas citas.',
+    pending: 'No tienes citas pendientes.',
+    confirmed: 'No tienes citas confirmadas.',
+    completed: 'No tienes citas completadas.',
+    cancelled: 'No tienes citas canceladas.',
+  }
+
+  return labels[selectedAppointmentFilter.value]
 })
 
 const dentistNameById = computed(() => {
@@ -531,10 +603,30 @@ function getRatingErrorMessage(error: unknown) {
       </div>
     </div>
 
+    <div class="appointment-filters" role="tablist" aria-label="Filtros de citas">
+      <button
+        v-for="option in appointmentFilterOptions"
+        :key="option.value"
+        class="appointment-filter-button"
+        :class="{
+          'appointment-filter-button-active':
+            selectedAppointmentFilter === option.value,
+        }"
+        type="button"
+        @click="selectedAppointmentFilter = option.value"
+      >
+        {{ option.label }}
+      </button>
+    </div>
+
     <p v-if="appointmentsQuery.isLoading.value">Cargando citas...</p>
 
     <p v-else-if="appointmentsQuery.isError.value" class="error-message">
       No se pudieron cargar tus citas.
+    </p>
+
+    <p v-if="!appointmentGroups.length" class="empty-message">
+      {{ emptyAppointmentsMessage }}
     </p>
 
     <div v-else-if="appointmentGroups.length" class="agenda-board">
@@ -867,5 +959,43 @@ function getRatingErrorMessage(error: unknown) {
 .modal-action-button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
+}
+
+.appointment-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.appointment-filter-button {
+  border: 1px solid #d8e2ec;
+  border-radius: 999px;
+  background: #fff;
+  color: #172033;
+  padding: 0.75rem 1.1rem;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.appointment-filter-button:hover {
+  border-color: #0f6b85;
+  color: #0f6b85;
+}
+
+.appointment-filter-button-active {
+  border-color: #0f6b85;
+  background: #eaf7f8;
+  color: #0f6b85;
+}
+
+.empty-message {
+  color: #667085;
+  font-weight: 700;
 }
 </style>
