@@ -141,7 +141,7 @@ const appointmentTimeSlots = computed(() => {
 
   const unavailableSlots = new Set(
     getAvailabilityRawSlots()
-      .filter((slot) => isAvailabilitySlotAvailable(slot))
+      .filter((slot) => isAvailabilitySlotUnavailable(slot))
       .map((slot) => availabilitySlotTime(slot))
       .filter((slot): slot is string => Boolean(slot)),
   )
@@ -334,13 +334,13 @@ function getAvailabilityRawSlots() {
   return []
 }
 
-function isAvailabilitySlotAvailable(slot: unknown) {
+function isAvailabilitySlotUnavailable(slot: unknown) {
   if (typeof slot === 'string') {
-    return true
+    return false
   }
 
   const value = slot as { available?: boolean }
-  return value.available !== false
+  return value.available === false
 }
 
 function availabilitySlotTime(slot: unknown) {
@@ -366,7 +366,11 @@ function normalizeClosedHour(value?: string) {
     return ''
   }
 
-  const match = value.match(/\b(\d{1,2}):([0-5]\d)\b/)
+  const isoTimeMatch = value.match(/T(\d{2}):([0-5]\d)/)
+  const plainTimeMatch = value.match(/^(\d{1,2}):([0-5]\d)$/)
+  const looseTimeMatch = value.match(/(?:^|\s)(\d{1,2}):([0-5]\d)(?:\s|$)/)
+
+  const match = isoTimeMatch ?? plainTimeMatch ?? looseTimeMatch
 
   if (!match) {
     return ''
@@ -677,7 +681,7 @@ async function submitAppointment() {
             type="submit"
             :disabled="isCreating || !appointmentTimeSlots.length"
           >
-            {{ isCreating ? 'Agendando...' : 'Confirmar cita' }}
+            {{ isCreating ? 'Solicitando...' : 'Solicitar cita' }}
           </button>
         </form>
       </section>
