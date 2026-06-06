@@ -49,6 +49,22 @@ export interface CreateRatingPayload {
   comment?: string
 }
 
+export interface DentistRatingItem {
+  id: string
+  appointmentId: string
+  patientId: string
+  score: number
+  comment?: string
+  createdAt: string
+}
+
+export interface DentistRatingsSummary {
+  dentistId: string
+  totalRatings: number
+  averageScore: number
+  latestRatings: DentistRatingItem[]
+}
+
 export async function getAppointments() {
   const { data } = await api.get<Appointment[]>('/appointments')
 
@@ -125,5 +141,13 @@ export async function rateAppointment({
     score,
     comment,
   })
+  return data
+}
+
+export async function getDentistRatingsSummary(dentistId: string) {
+  const { data } = await api.get<DentistRatingsSummary>(
+    `/dentists/${dentistId}/ratings/summary`,
+  )
+
   return data
 }
