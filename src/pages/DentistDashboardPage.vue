@@ -134,7 +134,7 @@ function downloadCsv() {
 
 <template>
   <AppLayout>
-    <div class="page-header">
+    <div class="page-header dashboard-header">
       <div>
         <p class="eyebrow">Odontólogo</p>
         <h2>Dashboard clínico</h2>
@@ -259,5 +259,13 @@ function downloadCsv() {
 
 .clickable-list-item:hover {
   background: #f8fafc;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1%;
 }
 </style>
