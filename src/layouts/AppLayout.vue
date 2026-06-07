@@ -7,6 +7,7 @@ import AppLogo from '../components/AppLogo.vue'
 const router = useRouter()
 const authStore = useAuthStore()
 const isSidebarCollapsed = ref(false)
+const showLogoutConfirm = ref(false)
 const initials = computed(() => {
   const value = displayName.value ?? 'U'
 
@@ -59,7 +60,16 @@ function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
 
-function logout() {
+function requestLogout() {
+  showLogoutConfirm.value = true
+}
+
+function cancelLogout() {
+  showLogoutConfirm.value = false
+}
+
+function confirmLogout() {
+  showLogoutConfirm.value = false
   authStore.logout()
   router.push('/login')
 }
@@ -134,8 +144,8 @@ function logout() {
         </RouterLink>
       </nav>
 
-      <button class="logout-button" type="button" @click="logout">
-        Cerrar sesión
+      <button class="logout-button" type="button" @click="requestLogout">
+        <span>Cerrar sesión</span>
       </button>
     </aside>
 
@@ -156,5 +166,105 @@ function logout() {
         <slot />
       </section>
     </main>
+      <Teleport to="body">
+        <div
+          v-if="showLogoutConfirm"
+          class="logout-confirm-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="logout-confirm-title"
+          @click.self="cancelLogout"
+        >
+          <section class="logout-confirm-card">
+            <p class="eyebrow">Cerrar sesión</p>
+            <h2 id="logout-confirm-title">¿Deseas salir de Dentia?</h2>
+            <p>
+              Tendrás que iniciar sesión nuevamente para acceder a tu información.
+            </p>
+
+            <div class="logout-confirm-actions">
+              <button
+                class="logout-confirm-button logout-confirm-secondary"
+                type="button"
+                @click="cancelLogout"
+              >
+                Cancelar
+              </button>
+
+              <button
+                class="logout-confirm-button logout-confirm-primary"
+                type="button"
+                @click="confirmLogout"
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          </section>
+        </div>
+      </Teleport>
   </div>
 </template>
+
+<style scoped>
+.logout-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(15, 32, 51, 0.42);
+  backdrop-filter: blur(10px);
+}
+
+.logout-confirm-card {
+  width: min(100%, 440px);
+  border-radius: 24px;
+  background: white;
+  padding: 1.5rem;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.logout-confirm-card h2 {
+  margin: 0.35rem 0 0.75rem;
+  color: var(--text);
+  font-size: 1.5rem;
+}
+
+.logout-confirm-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.logout-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+.logout-confirm-button {
+  min-height: 3.5rem;
+  border-radius: 16px;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.logout-confirm-secondary {
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text);
+}
+
+.logout-confirm-primary {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: white;
+}
+
+.logout-confirm-primary:hover {
+  background: var(--primary-dark);
+}
+</style>
