@@ -285,6 +285,11 @@ function getAppointmentCreateErrorMessage(error: unknown) {
   const status = response?.status
   const message = response?.data?.message ?? response?.data?.error
 
+    if (message === 'Patient already has a pending appointment request in this time range') {
+      return 'Ya tienes una solicitud pendiente para ese dentista en ese horario.'
+    }
+
+
   if (
     status === 409 ||
     message === 'Dentist already has an appointment in this time range'
