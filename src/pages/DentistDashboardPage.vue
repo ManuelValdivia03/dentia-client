@@ -101,34 +101,53 @@ function appointmentType(appointment: Appointment) {
   return appointment.reason?.trim() || 'Cita odontológica'
 }
 
-function buildCsv() {
+function downloadCsv() {
   const rows = [
-    ['seccion', 'categoria', 'total'],
+    ['seccion', 'categoria', 'total', 'porcentaje'],
     ...appointmentsByStatus.value.map((item) => [
       'estado',
       item.label,
       String(item.total),
+      percentage(item.total, summary.value.total),
     ]),
     ...completedByType.value.map((item) => [
-      'completadas_por_tipo',
+      'completadas',
       item.type,
       String(item.total),
+      percentage(item.total, summary.value.completed),
     ]),
   ]
 
-  return rows
-    .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))
+  const csvContent = rows
+    .map((row) => row.map(escapeCsvValue).join(','))
     .join('\n')
-}
 
-function downloadCsv() {
-  const blob = new Blob([buildCsv()], { type: 'text/csv;charset=utf-8' })
+  const blob = new Blob([`\uFEFF${csvContent}`], {
+    type: 'text/csv;charset=utf-8;',
+  })
+
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
+  const date = new Date().toISOString().slice(0, 10)
+
   link.href = url
-  link.download = 'dashboard-citas-dentista.csv'
+  link.download = `dentia-dashboard-${date}.csv`
   link.click()
+
   URL.revokeObjectURL(url)
+}
+
+function percentage(value: number, total: number) {
+  if (!total) return '0%'
+  return `${Math.round((value / total) * 100)}%`
+}
+
+function escapeCsvValue(value: string) {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+
+  return value
 }
 </script>
 
