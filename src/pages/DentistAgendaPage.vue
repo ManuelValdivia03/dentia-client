@@ -10,7 +10,11 @@ import {
   getDentistDayAgenda,
   type Appointment,
 } from '../modules/appointments/appointments.api'
-import { createPrescription } from '../modules/prescriptions/prescriptions.api'
+import {
+  createPrescription,
+  getPrescriptionsByAppointment,
+  type Prescription,
+} from '../modules/prescriptions/prescriptions.api'
 import {
   getUserByDomainId,
   userDisplayName,
@@ -22,6 +26,9 @@ const queryClient = useQueryClient()
 const selectedDate = ref(getLocalDateValue(new Date()))
 const calendarInputRef = ref<HTMLInputElement | null>(null)
 const prescriptionTarget = ref<Appointment | null>(null)
+const existingPrescription = ref<Prescription | null>(null)
+const isLoadingPrescription = ref(false)
+const prescriptionLookupFailed = ref(false)
 const diagnosis = ref('')
 const indications = ref('')
 const prescriptionNotes = ref('')
@@ -114,6 +121,31 @@ const appointments = computed(() => {
     .sort((a, b) => {
       return new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
     })
+})
+
+const completedAppointmentIds = computed(() => {
+  return appointments.value
+    .filter((appointment) => canPrescribe(appointment))
+    .map((appointment) => appointment.id)
+})
+
+const prescriptionsByAppointmentQuery = useQuery({
+  queryKey: computed(() => [
+    'prescriptions',
+    'dentist-agenda',
+    completedAppointmentIds.value,
+  ]),
+  queryFn: async () => {
+    const entries = await Promise.all(
+      completedAppointmentIds.value.map(async (appointmentId) => {
+        const prescriptions = await getPrescriptionsByAppointment(appointmentId)
+        return [appointmentId, prescriptions] as const
+      }),
+    )
+
+    return Object.fromEntries(entries) as Record<string, Prescription[]>
+  },
+  enabled: computed(() => completedAppointmentIds.value.length > 0),
 })
 
 const appointmentGroups = computed(() => {
@@ -355,6 +387,17 @@ function canPrescribe(appointment: Appointment) {
   return normalizeStatus(appointment.status) === 'COMPLETED'
 }
 
+function prescriptionButtonLabel(appointment: Appointment) {
+  const prescriptions =
+    prescriptionsByAppointmentQuery.data.value?.[appointment.id]
+
+  if (!prescriptions) {
+    return 'Receta'
+  }
+
+  return prescriptions.length > 0 ? 'Ver receta' : 'Crear receta'
+}
+
 async function handleConfirm(id: string) {
   clearActionError(id)
 
@@ -429,7 +472,7 @@ function isBusy() {
   )
 }
 
-function openPrescription(appointment: Appointment) {
+async function openPrescription(appointment: Appointment) {
   if (!canPrescribe(appointment)) {
     setActionError(
       appointment.id,
@@ -439,14 +482,45 @@ function openPrescription(appointment: Appointment) {
   }
 
   prescriptionTarget.value = appointment
+  existingPrescription.value = null
   diagnosis.value = ''
   indications.value = ''
   prescriptionNotes.value = ''
   prescriptionError.value = ''
+  isLoadingPrescription.value = true
+  prescriptionLookupFailed.value = false
+
+  try {
+    const loadedPrescriptions =
+      prescriptionsByAppointmentQuery.data.value?.[appointment.id]
+    const prescriptions =
+      loadedPrescriptions ??
+      (await getPrescriptionsByAppointment(appointment.id))
+    const prescription = prescriptions[0] ?? null
+
+    existingPrescription.value = prescription
+
+    if (prescription) {
+      diagnosis.value = prescription.diagnosis
+      indications.value = prescription.indications
+      prescriptionNotes.value = prescription.notes ?? ''
+    }
+  } catch (error) {
+    prescriptionLookupFailed.value = true
+    prescriptionError.value = getActionErrorMessage(error)
+  } finally {
+    isLoadingPrescription.value = false
+  }
 }
 
 async function submitPrescription() {
-  if (!prescriptionTarget.value) return
+  if (
+    !prescriptionTarget.value ||
+    existingPrescription.value ||
+    prescriptionLookupFailed.value
+  ) {
+    return
+  }
 
   prescriptionError.value = ''
 
@@ -628,7 +702,7 @@ async function submitPrescription() {
                   type="button"
                   @click="openPrescription(appointment)"
                 >
-                  Receta
+                  {{ prescriptionButtonLabel(appointment) }}
                 </button>
 
                 <button
@@ -668,7 +742,9 @@ async function submitPrescription() {
         <section class="modal-card prescription-modal-card">
           <header class="modal-header">
             <div>
-              <p class="eyebrow">Nueva receta</p>
+              <p class="eyebrow">
+                {{ existingPrescription ? 'Receta registrada' : 'Nueva receta' }}
+              </p>
               <h2 id="prescription-modal-title">
                 {{ prescriptionTarget.reason ?? 'Cita odontológica' }}
               </h2>
@@ -676,19 +752,37 @@ async function submitPrescription() {
           </header>
 
           <form class="modal-form" @submit.prevent="submitPrescription">
+            <p v-if="isLoadingPrescription">Cargando receta...</p>
+
             <label>
               Diagnóstico
-              <input v-model="diagnosis" required />
+              <input
+                v-model="diagnosis"
+                :disabled="isLoadingPrescription"
+                :readonly="Boolean(existingPrescription)"
+                required
+              />
             </label>
 
             <label>
               Indicaciones
-              <textarea v-model="indications" rows="3" required />
+              <textarea
+                v-model="indications"
+                :disabled="isLoadingPrescription"
+                :readonly="Boolean(existingPrescription)"
+                rows="3"
+                required
+              />
             </label>
 
             <label>
               Notas
-              <textarea v-model="prescriptionNotes" rows="3" />
+              <textarea
+                v-model="prescriptionNotes"
+                :disabled="isLoadingPrescription"
+                :readonly="Boolean(existingPrescription)"
+                rows="3"
+              />
             </label>
 
             <p v-if="prescriptionError" class="error-message">
@@ -701,13 +795,14 @@ async function submitPrescription() {
                 type="button"
                 @click="prescriptionTarget = null"
               >
-                Cancelar
+                {{ existingPrescription ? 'Cerrar' : 'Cancelar' }}
               </button>
 
               <button
+                v-if="!existingPrescription && !prescriptionLookupFailed"
                 class="modal-action-button modal-action-primary"
                 type="submit"
-                :disabled="prescriptionMutation.isPending.value"
+                :disabled="prescriptionMutation.isPending.value || isLoadingPrescription"
               >
                 {{ prescriptionMutation.isPending.value ? 'Guardando...' : 'Guardar receta' }}
               </button>

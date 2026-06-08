@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import DentistAgendaPage from './DentistAgendaPage.vue'
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   completeAppointment: vi.fn(),
   cancelAppointment: vi.fn(),
   createPrescription: vi.fn(),
+  getPrescriptionsByAppointment: vi.fn(),
   getUserByDomainId: vi.fn(),
 }))
 
@@ -43,6 +44,7 @@ vi.mock('../modules/appointments/appointments.api', () => ({
 
 vi.mock('../modules/prescriptions/prescriptions.api', () => ({
   createPrescription: mocks.createPrescription,
+  getPrescriptionsByAppointment: mocks.getPrescriptionsByAppointment,
 }))
 
 vi.mock('../modules/users/users.api', () => ({
@@ -87,6 +89,10 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 describe('DentistAgendaPage', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.routeQuery = {}
@@ -98,6 +104,7 @@ describe('DentistAgendaPage', () => {
     })
 
     mocks.getDentistDayAgenda.mockResolvedValue([])
+    mocks.getPrescriptionsByAppointment.mockResolvedValue([])
   })
 
   it('shows multiple pending requests for the same time slot', async () => {
@@ -185,7 +192,79 @@ describe('DentistAgendaPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Receta')
+    expect(wrapper.text()).toContain('Crear receta')
+  })
+
+  it('shows the registered prescription instead of a new blank form', async () => {
+    mocks.getDentistDayAgenda.mockResolvedValue([
+      {
+        id: 'appointment-1',
+        patientId: 'p1',
+        dentistId: 'd1',
+        reason: 'Cita completada',
+        notes: '',
+        startAt: '2026-06-04T15:00:00.000Z',
+        endAt: '2026-06-04T16:00:00.000Z',
+        status: 'COMPLETED',
+      },
+    ])
+    mocks.getPrescriptionsByAppointment.mockResolvedValue([
+      {
+        id: 'prescription-1',
+        appointmentId: 'appointment-1',
+        patientId: 'p1',
+        dentistId: 'd1',
+        diagnosis: 'Caries',
+        indications: 'Tomar analgésico',
+        notes: 'Revisión en una semana',
+      },
+    ])
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Ver receta')
+
+    await findButtonByText(wrapper, 'Ver receta').trigger('click')
+    await flushPromises()
+
+    expect(mocks.getPrescriptionsByAppointment).toHaveBeenCalledWith(
+      'appointment-1',
+    )
+    expect(document.body.textContent).toContain('Receta registrada')
+    expect(document.body.textContent).toContain('Cerrar')
+    expect(document.body.textContent).not.toContain('Guardar receta')
+
+    const diagnosisInput = document.body.querySelector<HTMLInputElement>(
+      'input[readonly]',
+    )
+    expect(diagnosisInput?.value).toBe('Caries')
+  })
+
+  it('shows a new prescription form when the appointment has none', async () => {
+    mocks.getDentistDayAgenda.mockResolvedValue([
+      {
+        id: 'appointment-1',
+        patientId: 'p1',
+        dentistId: 'd1',
+        reason: 'Cita completada',
+        notes: '',
+        startAt: '2026-06-04T15:00:00.000Z',
+        endAt: '2026-06-04T16:00:00.000Z',
+        status: 'COMPLETED',
+      },
+    ])
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Crear receta')
+
+    await findButtonByText(wrapper, 'Crear receta').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Nueva receta')
+    expect(document.body.textContent).toContain('Guardar receta')
   })
 
   it('does not show prescription button for non completed appointments', async () => {
