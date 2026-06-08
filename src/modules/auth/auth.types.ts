@@ -50,6 +50,20 @@ export interface ResendVerificationCodePayload {
   email: string
 }
 
+export interface RequestPasswordResetPayload {
+  email: string
+}
+
+export interface ResetPasswordPayload {
+  email: string
+  code: string
+  password: string
+}
+
+export interface AuthMessageResponse {
+  message: string
+}
+
 export interface LoginResponse {
   accessToken?: string
   token?: string

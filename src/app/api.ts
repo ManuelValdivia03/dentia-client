@@ -110,7 +110,9 @@ api.interceptors.response.use(
     const isAuthSessionEndpoint =
       url.includes('/auth/login') ||
       url.includes('/auth/refresh') ||
-      url.includes('/auth/logout')
+      url.includes('/auth/logout') ||
+      url.includes('/auth/forgot-password') ||
+      url.includes('/auth/reset-password')
 
     if (
       error.response?.status === 401 &&

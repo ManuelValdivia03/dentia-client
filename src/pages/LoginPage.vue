@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.store'
 import AppLogo from '../components/AppLogo.vue'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -11,9 +12,15 @@ const email = ref('')
 const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
+const successMessage = ref(
+  route.query.passwordReset === 'success'
+    ? 'Contraseña actualizada correctamente. Ya puedes iniciar sesión.'
+    : '',
+)
 
 async function handleLogin() {
   errorMessage.value = ''
+  successMessage.value = ''
   isLoading.value = true
 
   try {
@@ -94,8 +101,18 @@ async function handleLogin() {
             />
           </label>
 
+          <p class="auth-link">
+            <RouterLink to="/forgot-password">
+              Olvidé mi contraseña
+            </RouterLink>
+          </p>
+
           <p v-if="errorMessage" class="error-message">
             {{ errorMessage }}
+          </p>
+
+          <p v-if="successMessage" class="success-message">
+            {{ successMessage }}
           </p>
 
           <button class="primary-button" type="submit" :disabled="isLoading">

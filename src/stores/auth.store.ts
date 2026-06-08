@@ -6,7 +6,9 @@ import {
   logoutSession as logoutRequest,
   refreshSession as refreshSessionRequest,
   register as registerRequest,
+  requestPasswordReset as requestPasswordResetRequest,
   resendVerificationCode as resendVerificationCodeRequest,
+  resetPassword as resetPasswordRequest,
   updateProfile as updateProfileRequest,
   verifyEmail as verifyEmailRequest,
 } from '../modules/auth/auth.service'
@@ -14,7 +16,9 @@ import type {
   AuthUser,
   LoginPayload,
   RegisterPayload,
+  RequestPasswordResetPayload,
   ResendVerificationCodePayload,
+  ResetPasswordPayload,
   UpdateProfilePayload,
   VerifyEmailPayload,
 } from '../modules/auth/auth.types'
@@ -92,6 +96,14 @@ export const useAuthStore = defineStore('auth', () => {
     payload: ResendVerificationCodePayload,
   ) {
     return resendVerificationCodeRequest(payload)
+  }
+
+  async function requestPasswordReset(payload: RequestPasswordResetPayload) {
+    return requestPasswordResetRequest(payload)
+  }
+
+  async function resetPassword(payload: ResetPasswordPayload) {
+    return resetPasswordRequest(payload)
   }
 
   async function loadProfile() {
@@ -326,6 +338,8 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     verifyEmail,
     resendVerificationCode,
+    requestPasswordReset,
+    resetPassword,
     loadProfile,
     updateProfile,
     ensureAuthenticated,

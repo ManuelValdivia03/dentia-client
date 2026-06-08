@@ -1,10 +1,13 @@
 import { api } from '../../app/api'
 import type {
+  AuthMessageResponse,
   AuthUser,
   LoginPayload,
   LoginResponse,
   RegisterPayload,
+  RequestPasswordResetPayload,
   ResendVerificationCodePayload,
+  ResetPasswordPayload,
   UpdateProfilePayload,
   VerifyEmailPayload,
 } from './auth.types'
@@ -60,6 +63,24 @@ export async function resendVerificationCode(
   payload: ResendVerificationCodePayload,
 ) {
   const { data } = await api.post('/auth/resend-verification-code', payload)
+  return data
+}
+
+export async function requestPasswordReset(
+  payload: RequestPasswordResetPayload,
+) {
+  const { data } = await api.post<AuthMessageResponse>(
+    '/auth/forgot-password',
+    payload,
+  )
+  return data
+}
+
+export async function resetPassword(payload: ResetPasswordPayload) {
+  const { data } = await api.post<AuthMessageResponse>(
+    '/auth/reset-password',
+    payload,
+  )
   return data
 }
 

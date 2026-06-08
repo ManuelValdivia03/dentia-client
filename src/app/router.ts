@@ -6,6 +6,8 @@ import RegisterPage from '../pages/RegisterPage.vue'
 import PatientRegisterPage from '../pages/PatientRegisterPage.vue'
 import DoctorRegisterPage from '../pages/DoctorRegisterPage.vue'
 import VerifyEmailPage from '../pages/VerifyEmailPage.vue'
+import ForgotPasswordPage from '../pages/ForgotPasswordPage.vue'
+import ResetPasswordPage from '../pages/ResetPasswordPage.vue'
 import DashboardRedirectPage from '../pages/DashboardRedirectPage.vue'
 import PatientDentistsPage from '../pages/PatientDentistsPage.vue'
 import PatientDentistDetailPage from '../pages/PatientDentistDetailPage.vue'
@@ -48,6 +50,16 @@ export const router = createRouter({
     {
       path: '/verify-email',
       component: VerifyEmailPage,
+      meta: { public: true },
+    },
+    {
+      path: '/forgot-password',
+      component: ForgotPasswordPage,
+      meta: { public: true },
+    },
+    {
+      path: '/reset-password',
+      component: ResetPasswordPage,
       meta: { public: true },
     },
     {
