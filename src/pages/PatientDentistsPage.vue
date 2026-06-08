@@ -14,6 +14,14 @@ import {
   getPrioritizedDentists,
 } from '../modules/dentists/dentists.service'
 import type { Dentist } from '../modules/dentists/dentists.types'
+import {
+  addMinutesToLocalDateTime,
+  datePartFromDateTime,
+  getClinicNowKey,
+  isFutureClinicDateTime,
+  localDateTimeValue,
+  timePartFromDateTime,
+} from '../utils/clinic-time'
 const queryClient = useQueryClient()
 const router = useRouter()
 
@@ -30,21 +38,9 @@ const notes = ref('')
 const isCreating = ref(false)
 const formError = ref('')
 const formSuccess = ref('')
-const today = getLocalDateValue()
-
-const DEFAULT_TIME_SLOTS = [
-  '09:00',
-  '10:00',
-  '11:00',
-  '12:00',
-  '13:00',
-  '14:00',
-  '15:00',
-  '16:00',
-]
-
+const today = computed(() => getClinicNowKey().slice(0, 10))
 const isAppointmentDatePast = computed(
-  () => Boolean(appointmentDate.value) && isBeforeToday(appointmentDate.value),
+  () => Boolean(appointmentDate.value) && appointmentDate.value < today.value,
 )
 
 const dentistsQuery = useQuery({
@@ -134,23 +130,16 @@ const specialtyOptions = computed(() => {
 
 const hasActiveFilters = computed(() => Boolean(search.value || specialtyFilter.value))
 
-const appointmentTimeSlots = computed(() => {
-  if (!appointmentDate.value || isAppointmentDatePast.value) {
-    return []
-  }
+const availabilitySlots = computed(() => {
+  const value = availabilityQuery.data.value
 
-  const unavailableSlots = new Set(
-    getAvailabilityRawSlots()
-      .filter((slot) => isAvailabilitySlotUnavailable(slot))
-      .map((slot) => availabilitySlotTime(slot))
-      .filter((slot): slot is string => Boolean(slot)),
-  )
+  const rawSlots = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && 'slots' in value
+      ? (value as { slots?: unknown[] }).slots ?? []
+      : []
 
-  return DEFAULT_TIME_SLOTS.filter(
-    (slot) =>
-      !unavailableSlots.has(slot) &&
-      !isSelectedTimePast(appointmentDate.value, slot),
-  )
+  return rawSlots.filter((slot) => isSelectableSlot(slot))
 })
 
 const ratingAverage = computed(() => {
@@ -163,27 +152,17 @@ const ratingTotal = computed(() => {
   return summary?.totalRatings ?? summary?.ratingsCount ?? summary?.total ?? 0
 })
 
-function formatRating(value: number) {
-  return Number(value || 0).toFixed(1)
-}
-
 watch(appointmentDate, (date) => {
   formError.value = ''
   appointmentTime.value = ''
 
-  if (date && isBeforeToday(date)) {
-    appointmentDate.value = today
+  if (date && date < today.value) {
+    appointmentDate.value = today.value
   }
 })
 
 watch(appointmentTime, (time) => {
-  if (time && !appointmentTimeSlots.value.includes(time)) {
-    appointmentTime.value = ''
-  }
-})
-
-watch(appointmentTimeSlots, (slots) => {
-  if (appointmentTime.value && !slots.includes(appointmentTime.value)) {
+  if (time && isSelectedTimePast(appointmentDate.value, time)) {
     appointmentTime.value = ''
   }
 })
@@ -246,149 +225,56 @@ function closeSchedule() {
   selectedDentist.value = null
 }
 
-function getLocalDateValue(date = new Date()) {
-  const { year, month, day } = getMexicoDateTimeParts(date)
-
-  return `${year}-${month}-${day}`
-}
-
-function getMexicoDateTimeParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Mexico_City',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(date)
-
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? ''
-
-  return {
-    year: value('year'),
-    month: value('month'),
-    day: value('day'),
-    hour: value('hour') === '24' ? '00' : value('hour'),
-    minute: value('minute'),
-  }
-}
-
-function isBeforeToday(date: string) {
-  if (!date) return false
-  return date < getLocalDateValue()
-}
-
 function isSelectedTimePast(date: string, time: string) {
   if (!date || !time) return false
 
-  const today = getLocalDateValue()
-
-  if (date > today) {
-    return false
-  }
-
-  if (date < today) {
-    return true
-  }
-
-  const [hours, minutes] = time.split(':').map(Number)
-  const mexicoNow = getMexicoDateTimeParts()
-  const currentMinutes = Number(mexicoNow.hour) * 60 + Number(mexicoNow.minute)
-  const selectedMinutes = hours * 60 + minutes
-
-  return selectedMinutes <= currentMinutes
+  return !isFutureClinicDateTime(date, time)
 }
 
-function localDateTimeValue(date: string, time: string) {
-  return `${date}T${time}:00`
+function slotLabel(slot: unknown) {
+  if (typeof slot === 'string') return slot
+
+  const value = slot as { startAt?: string; endAt?: string; label?: string }
+
+  if (value.label) return value.label
+  if (!value.startAt) return 'Horario disponible'
+
+  return timePartFromDateTime(value.startAt)
 }
 
-function addMinutesToLocalDateTime(date: string, time: string, minutesToAdd: number) {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  const value = new Date(Date.UTC(year, month - 1, day, hour, minute + minutesToAdd))
+function slotTime(slot: unknown) {
+  if (typeof slot === 'string') return slot
 
-  const nextDate = [
-    value.getUTCFullYear(),
-    String(value.getUTCMonth() + 1).padStart(2, '0'),
-    String(value.getUTCDate()).padStart(2, '0'),
-  ].join('-')
+  const value = slot as { startAt?: string }
+  if (!value.startAt) return ''
 
-  const nextTime = `${String(value.getUTCHours()).padStart(2, '0')}:${String(
-    value.getUTCMinutes(),
-  ).padStart(2, '0')}`
-
-  return localDateTimeValue(nextDate, nextTime)
+  return timePartFromDateTime(value.startAt)
 }
 
-function getAvailabilityRawSlots() {
-  const value = availabilityQuery.data.value
-
-  if (Array.isArray(value)) {
-    return value
-  }
-
-  if (value && typeof value === 'object' && 'slots' in value) {
-    const slots = (value as { slots?: unknown }).slots
-    return Array.isArray(slots) ? slots : []
-  }
-
-  return []
-}
-
-function isAvailabilitySlotUnavailable(slot: unknown) {
+function isSelectableSlot(slot: unknown) {
   if (typeof slot === 'string') {
-    return false
-  }
+    if (!appointmentDate.value) return false
 
-  const value = slot as { available?: boolean }
-  return value.available === false
-}
-
-function availabilitySlotTime(slot: unknown) {
-  if (typeof slot === 'string') {
-    return normalizeClosedHour(slot)
+    return isFutureClinicDateTime(appointmentDate.value, slot)
   }
 
   const value = slot as {
     startAt?: string
-    StartAt?: string
-    label?: string
+    available?: boolean
+    Available?: boolean
   }
 
-  return (
-    normalizeClosedHour(value.startAt) ||
-    normalizeClosedHour(value.StartAt) ||
-    normalizeClosedHour(value.label)
+  const available = value.available ?? value.Available ?? true
+
+  if (available === false) return false
+  if (!value.startAt) return false
+
+  return isFutureClinicDateTime(
+    datePartFromDateTime(value.startAt),
+    timePartFromDateTime(value.startAt),
   )
 }
 
-function normalizeClosedHour(value?: string) {
-  if (!value) {
-    return ''
-  }
-
-  const isoTimeMatch = value.match(/T(\d{2}):([0-5]\d)/)
-  const plainTimeMatch = value.match(/^(\d{1,2}):([0-5]\d)$/)
-  const looseTimeMatch = value.match(/(?:^|\s)(\d{1,2}):([0-5]\d)(?:\s|$)/)
-
-  const match = isoTimeMatch ?? plainTimeMatch ?? looseTimeMatch
-
-  if (!match) {
-    return ''
-  }
-
-  const hour = Number(match[1])
-  const minutes = match[2]
-
-  if (hour < 0 || hour > 23 || minutes !== '00') {
-    return ''
-  }
-
-  return `${String(hour).padStart(2, '0')}:00`
-}
 
 function getAppointmentCreateErrorMessage(error: unknown) {
   const response =
@@ -437,13 +323,8 @@ async function submitAppointment() {
     return
   }
 
-  if (isSelectedTimePast(appointmentDate.value, appointmentTime.value)) {
-    formError.value = 'Elige una hora posterior al momento actual.'
-    return
-  }
-
-  if (!appointmentTimeSlots.value.includes(appointmentTime.value)) {
-    formError.value = 'Selecciona un horario disponible.'
+  if (!isFutureClinicDateTime(appointmentDate.value, appointmentTime.value)) {
+    formError.value = 'Elige una fecha y hora posteriores al momento actual.'
     return
   }
 
@@ -621,7 +502,7 @@ async function submitAppointment() {
             <p class="eyebrow">Nueva cita</p>
             <h2>{{ dentistName(selectedDentist) }}</h2>
             <p class="muted-text">
-              {{ formatRating(ratingAverage) }} / 5 · {{ ratingTotal }} valoraciones
+              {{ ratingAverage.toFixed(1) }} / 5 · {{ ratingTotal }} valoraciones
             </p>
           </div>
 
@@ -640,25 +521,37 @@ async function submitAppointment() {
             Hora
             <select
               v-model="appointmentTime"
-              :disabled="!appointmentDate || availabilityQuery.isLoading.value || !appointmentTimeSlots.length"
+              :disabled="
+                !appointmentDate ||
+                availabilityQuery.isLoading.value ||
+                !availabilitySlots.length
+              "
               required
             >
               <option value="">Selecciona un horario</option>
               <option
-                v-for="slot in appointmentTimeSlots"
-                :key="slot"
-                :value="slot"
+                v-for="slot in availabilitySlots"
+                :key="`${slotTime(slot)}-${slotLabel(slot)}`"
+                :value="slotTime(slot)"
               >
-                {{ slot }}
+                {{ slotLabel(slot) }}
               </option>
             </select>
           </label>
 
-          <p v-if="availabilityQuery.isLoading.value" class="muted-text">
-            Consultando horarios disponibles...
-          </p>
           <p
-            v-else-if="appointmentDate && !isAppointmentDatePast && !appointmentTimeSlots.length && !availabilityQuery.isError.value"
+            v-if="appointmentDate && availabilityQuery.isLoading.value"
+            class="muted-text"
+          >
+            Cargando horarios disponibles...
+          </p>
+
+          <p
+            v-else-if="
+              appointmentDate &&
+              !availabilityQuery.isError.value &&
+              !availabilitySlots.length
+            "
             class="muted-text"
           >
             No hay horarios disponibles para esta fecha.
@@ -675,17 +568,13 @@ async function submitAppointment() {
           </label>
 
           <p v-if="availabilityQuery.isError.value" class="error-message">
-            No se pudo consultar disponibilidad. Cambia la fecha o vuelve a intentar.
+            No se pudo consultar disponibilidad. Vuelve a intentarlo en unos segundos.
           </p>
           <p v-if="formError" class="error-message">{{ formError }}</p>
           <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>
 
-          <button
-            class="primary-button"
-            type="submit"
-            :disabled="isCreating || !appointmentTimeSlots.length"
-          >
-            {{ isCreating ? 'Solicitando...' : 'Solicitar cita' }}
+          <button class="primary-button" type="submit" :disabled="isCreating">
+            {{ isCreating ? 'Agendando...' : 'Confirmar cita' }}
           </button>
         </form>
       </section>

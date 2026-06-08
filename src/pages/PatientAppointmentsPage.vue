@@ -12,6 +12,14 @@ import {
 } from '../modules/appointments/appointments.api'
 import { getDentists } from '../modules/dentists/dentists.service'
 import type { Dentist } from '../modules/dentists/dentists.types'
+import {
+  addMinutesToLocalDateTime,
+  datePartFromDateTime,
+  getClinicNowKey,
+  isFutureClinicDateTime,
+  localDateTimeValue,
+  timePartFromDateTime,
+} from '../utils/clinic-time'
 
 const queryClient = useQueryClient()
 
@@ -55,13 +63,10 @@ const ratingOptions = [
 ]
 const ratingError = ref('')
 const ratingSuccess = ref('')
-const today = getLocalDateValue()
+const today = computed(() => getClinicNowKey().slice(0, 10))
 const rescheduleError = ref('')
-const rescheduleMinTime = computed(
-  () => (rescheduleDate.value === today ? getLocalTimeValue() : undefined),
-)
 const isRescheduleDatePast = computed(
-  () => Boolean(rescheduleDate.value) && isBeforeToday(rescheduleDate.value),
+  () => Boolean(rescheduleDate.value) && rescheduleDate.value < today.value,
 )
 
 const appointmentsQuery = useQuery({
@@ -106,7 +111,7 @@ const filteredAppointments = computed(() => {
     if (selectedAppointmentFilter.value === 'upcoming') {
       return (
         (status === 'PENDING' || status === 'CONFIRMED') &&
-        new Date(appointment.startAt).getTime() >= Date.now()
+        isFutureAppointment(appointment)
       )
     }
 
@@ -136,12 +141,12 @@ const appointmentGroups = computed(() => {
 
 const emptyAppointmentsMessage = computed(() => {
   const labels: Record<AppointmentFilter, string> = {
-    all: 'No tienes citas registradas.',
-    upcoming: 'No tienes próximas citas.',
-    pending: 'No tienes citas pendientes.',
-    confirmed: 'No tienes citas confirmadas.',
-    completed: 'No tienes citas completadas.',
-    cancelled: 'No tienes citas canceladas.',
+    all: 'No tienes citas registradas',
+    upcoming: 'No tienes próximas citas',
+    pending: 'No tienes citas pendientes',
+    confirmed: 'No tienes citas confirmadas',
+    completed: 'No tienes citas completadas',
+    cancelled: 'No tienes citas canceladas',
   }
 
   return labels[selectedAppointmentFilter.value]
@@ -159,18 +164,13 @@ const dentistNameById = computed(() => {
 const rescheduleAvailabilitySlots = computed(() => {
   const value = rescheduleAvailabilityQuery.data.value
 
-  if (Array.isArray(value)) {
-    return value.filter((slot) => !isPastSlot(slot))
-  }
-
-  if (value && typeof value === 'object' && 'slots' in value) {
-    const slots = (value as { slots?: unknown }).slots
-    return Array.isArray(slots)
-      ? slots.filter((slot) => !isPastSlot(slot))
+  const rawSlots = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && 'slots' in value
+      ? (value as { slots?: unknown[] }).slots ?? []
       : []
-  }
 
-  return []
+  return rawSlots.filter((slot) => isSelectableRescheduleSlot(slot))
 })
 
 const cancelMutation = useMutation({
@@ -202,8 +202,8 @@ watch(rescheduleDate, (date) => {
   rescheduleError.value = ''
   rescheduleTime.value = ''
 
-  if (date && isBeforeToday(date)) {
-    rescheduleDate.value = today
+  if (date && date < today.value) {
+    rescheduleDate.value = today.value
   }
 })
 
@@ -259,7 +259,7 @@ function groupAppointmentsByDay(appointments: Appointment[]) {
 
   return sorted.reduce<Array<{ key: string; label: string; appointments: Appointment[] }>>(
     (groups, appointment) => {
-      const key = getLocalDateValue(new Date(appointment.startAt))
+      const key = datePartFromDateTime(appointment.startAt)
       const existingGroup = groups.find((group) => group.key === key)
 
       if (existingGroup) {
@@ -290,74 +290,17 @@ function dentistDisplayName(dentistId: string) {
   return dentistNameById.value.get(dentistId) ?? dentistId
 }
 
-function getLocalDateValue(date = new Date()) {
-  const { year, month, day } = getMexicoDateTimeParts(date)
-
-  return `${year}-${month}-${day}`
-}
-
-function getLocalTimeValue(date = new Date()) {
-  const { hour, minute } = getMexicoDateTimeParts(date)
-
-  return `${hour}:${minute}`
-}
-
-function getMexicoDateTimeParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Mexico_City',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(date)
-
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? ''
-
-  return {
-    year: value('year'),
-    month: value('month'),
-    day: value('day'),
-    hour: value('hour') === '24' ? '00' : value('hour'),
-    minute: value('minute'),
-  }
-}
-
-function isBeforeToday(date: string) {
-  return date < getLocalDateValue()
-}
-
 function isSelectedTimePast(date: string, time: string) {
   if (!date || !time) return false
 
-  const today = getLocalDateValue()
-
-  if (date < today) return true
-  if (date > today) return false
-
-  return time <= getLocalTimeValue()
+  return !isFutureClinicDateTime(date, time)
 }
 
-function localDateTimeValue(date: string, time: string) {
-  return `${date}T${time}:00`
-}
-
-function addMinutesToLocalDateTime(date: string, time: string, minutesToAdd: number) {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  const value = new Date(Date.UTC(year, month - 1, day, hour, minute + minutesToAdd))
-  const nextDate = [
-    value.getUTCFullYear(),
-    String(value.getUTCMonth() + 1).padStart(2, '0'),
-    String(value.getUTCDate()).padStart(2, '0'),
-  ].join('-')
-  const nextTime = `${String(value.getUTCHours()).padStart(2, '0')}:${String(
-    value.getUTCMinutes(),
-  ).padStart(2, '0')}`
-
-  return localDateTimeValue(nextDate, nextTime)
+function isFutureAppointment(appointment: Appointment) {
+  return isFutureClinicDateTime(
+    datePartFromDateTime(appointment.startAt),
+    timePartFromDateTime(appointment.startAt),
+  )
 }
 
 function slotLabel(slot: unknown) {
@@ -380,29 +323,30 @@ function slotTime(slot: unknown) {
   return timePartFromDateTime(value.startAt)
 }
 
-function isPastSlot(slot: unknown) {
+function isSelectableRescheduleSlot(slot: unknown) {
   if (typeof slot === 'string') {
     if (!rescheduleDate.value) return false
-    return isSelectedTimePast(rescheduleDate.value, slot)
+
+    return isFutureClinicDateTime(rescheduleDate.value, slot)
   }
 
-  const value = slot as { startAt?: string; available?: boolean }
-  if (value.available === false) return true
+  const value = slot as {
+    startAt?: string
+    available?: boolean
+    Available?: boolean
+  }
+
+  const available = value.available ?? value.Available ?? true
+
+  if (available === false) return false
   if (!value.startAt) return false
 
-  return isSelectedTimePast(
+  return isFutureClinicDateTime(
     datePartFromDateTime(value.startAt),
     timePartFromDateTime(value.startAt),
   )
 }
 
-function datePartFromDateTime(value: string) {
-  return value.slice(0, 10)
-}
-
-function timePartFromDateTime(value: string) {
-  return value.slice(11, 16)
-}
 
 function canCancel(appointment: Appointment) {
   const status = normalizeStatus(appointment.status)
@@ -413,7 +357,7 @@ function canReschedule(appointment: Appointment) {
   const status = normalizeStatus(appointment.status)
   return (
     (status === 'PENDING' || status === 'CONFIRMED') &&
-    new Date(appointment.startAt).getTime() > Date.now()
+    isFutureAppointment(appointment)
   )
 }
 
@@ -438,11 +382,8 @@ async function handleCancel(id: string) {
 
 function openReschedule(appointment: Appointment) {
   rescheduleTarget.value = appointment
-  const date = new Date(appointment.startAt)
-  rescheduleDate.value = getLocalDateValue(date)
-  rescheduleTime.value = `${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes(),
-  ).padStart(2, '0')}`
+  rescheduleDate.value = datePartFromDateTime(appointment.startAt)
+  rescheduleTime.value = timePartFromDateTime(appointment.startAt)
   rescheduleReason.value = appointment.reason ?? ''
   rescheduleNotes.value = appointment.notes ?? ''
   rescheduleError.value = ''
@@ -464,13 +405,13 @@ async function submitReschedule() {
     return
   }
 
-  if (isBeforeToday(rescheduleDate.value)) {
+  if (isRescheduleDatePast.value) {
     rescheduleError.value = 'Elige una fecha a partir de hoy.'
     return
   }
 
-  if (isSelectedTimePast(rescheduleDate.value, rescheduleTime.value)) {
-    rescheduleError.value = 'Elige una hora posterior al momento actual.'
+  if (!isFutureClinicDateTime(rescheduleDate.value, rescheduleTime.value)) {
+    rescheduleError.value = 'Elige una fecha y hora posteriores al momento actual.'
     return
   }
 
@@ -529,7 +470,7 @@ async function submitRating() {
     const message = getRatingErrorMessage(error)
     ratingError.value = message
 
-    if (message === 'Esta cita ya fue valorada.') {
+    if (message === 'Esta cita ya fue valorada') {
       ratedAppointmentIds.value = new Set([
         ...ratedAppointmentIds.value,
         appointmentId,
@@ -567,29 +508,29 @@ function getRatingErrorMessage(error: unknown) {
     message.includes('Appointment already has a rating') ||
     message.includes('already has a rating')
   ) {
-    return 'Esta cita ya fue valorada.'
+    return 'Esta cita ya fue valorada'
   }
 
   if (message.includes('Only completed appointments can be rated')) {
-    return 'Solo puedes valorar citas completadas.'
+    return 'Solo puedes valorar citas completadas'
   }
 
   if (message.includes('Patient can only rate own appointments')) {
-    return 'No puedes valorar una cita que no te pertenece.'
+    return 'No puedes valorar una cita que no te pertenece'
   }
 
   if (
     message.includes('Score must be between 1 and 5') ||
     message.includes('score must be between 1 and 5')
   ) {
-    return 'Selecciona una calificación válida.'
+    return 'Selecciona una calificación válida'
   }
 
   if (status === 400) {
-    return 'No se pudo enviar la valoración. Revisa los datos e intenta nuevamente.'
+    return 'No se pudo enviar la valoración. Revisa los datos e intenta nuevamente'
   }
 
-  return 'No se pudo enviar la valoración. Intenta nuevamente.'
+  return 'No se pudo enviar la valoración. Intenta nuevamente'
 }
 
 </script>
@@ -735,29 +676,45 @@ function getRatingErrorMessage(error: unknown) {
           Fecha
           <input v-model="rescheduleDate" type="date" :min="today" required />
         </label>
-        <label v-if="rescheduleAvailabilitySlots.length">
+        <label>
           Hora
-          <select v-model="rescheduleTime" :disabled="!rescheduleDate">
+          <select
+            v-model="rescheduleTime"
+            :disabled="
+              !rescheduleDate ||
+              rescheduleAvailabilityQuery.isLoading.value ||
+              !rescheduleAvailabilitySlots.length
+            "
+            required
+          >
             <option value="">Selecciona un horario</option>
             <option
               v-for="slot in rescheduleAvailabilitySlots"
-              :key="slotLabel(slot)"
+              :key="`${slotTime(slot)}-${slotLabel(slot)}`"
               :value="slotTime(slot)"
             >
               {{ slotLabel(slot) }}
             </option>
           </select>
         </label>
-        <label v-else>
-          Hora
-          <input
-            v-model="rescheduleTime"
-            type="time"
-            :disabled="!rescheduleDate"
-            :min="rescheduleMinTime"
-            required
-          />
-        </label>
+
+        <p
+          v-if="rescheduleDate && rescheduleAvailabilityQuery.isLoading.value"
+          class="muted-text"
+        >
+          Cargando horarios disponibles...
+        </p>
+
+        <p
+          v-else-if="
+            rescheduleDate &&
+            !rescheduleAvailabilityQuery.isError.value &&
+            !rescheduleAvailabilitySlots.length
+          "
+          class="muted-text"
+        >
+          No hay horarios disponibles para esta fecha.
+        </p>
         <label>
           Motivo
           <input v-model="rescheduleReason" type="text" placeholder="Consulta general" />
@@ -767,7 +724,7 @@ function getRatingErrorMessage(error: unknown) {
           <textarea v-model="rescheduleNotes" rows="3" placeholder="Notas opcionales" />
         </label>
         <p v-if="rescheduleAvailabilityQuery.isError.value" class="error-message">
-          No se pudo consultar disponibilidad; puedes elegir fecha y volver a intentar.
+          No se pudo consultar disponibilidad. Vuelve a intentarlo en unos segundos.
         </p>
         <p v-if="rescheduleError" class="error-message">{{ rescheduleError }}</p>
         <button class="primary-button" type="submit" :disabled="rescheduleMutation.isPending.value">
