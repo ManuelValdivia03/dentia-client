@@ -39,8 +39,6 @@ a {
   text-decoration: none;
 }
 
-/* AUTH */
-
 .auth-split {
   min-height: 100vh;
   display: grid;
@@ -285,8 +283,6 @@ textarea:focus {
   font-weight: 800;
   margin: 0;
 }
-
-/* APP */
 
 .app-shell {
   min-height: 100vh;
