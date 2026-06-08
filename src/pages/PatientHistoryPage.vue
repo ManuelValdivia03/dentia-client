@@ -218,7 +218,13 @@ async function downloadPrescription(prescription: Prescription) {
       <h3>Archivos clínicos</h3>
 
       <form class="inline-form" @submit.prevent="submitFile">
-        <input type="file" accept="application/pdf,image/png,image/jpeg" @change="onFileChange" />
+        <label>
+          Archivo clínico
+          <small class="muted-text">
+            Formatos permitidos: PDF, JPG o PNG. Peso máximo: 10 MB.
+          </small>
+          <input type="file" accept="application/pdf,image/png,image/jpeg" @change="onFileChange" />
+        </label>
         <button class="primary-button inline-button" type="submit" :disabled="uploadMutation.isPending.value">
           Subir archivo
         </button>

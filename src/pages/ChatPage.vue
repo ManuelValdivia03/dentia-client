@@ -597,6 +597,9 @@ async function submitMessage() {
 
           <form class="message-form" @submit.prevent="submitMessage">
             <textarea v-model="messageBody" rows="3" placeholder="Escribe un mensaje" />
+            <small class="muted-text">
+              Adjuntos permitidos: JPG, PNG, WEBP, PDF, MP4 o WEBM. Peso máximo: 50 MB.
+            </small>
             <input
               ref="fileInput"
               type="file"

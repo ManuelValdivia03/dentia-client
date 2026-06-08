@@ -99,6 +99,9 @@ function handlePhotoChange(event: Event) {
 
           <label>
             Foto de perfil
+            <small class="muted-text">
+              Formatos permitidos: JPG, PNG o WEBP. Peso máximo: 5 MB.
+            </small>
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
