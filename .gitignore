@@ -9,10 +9,14 @@ lerna-debug.log*
 
 # Dependencies
 node_modules/
+.electron-cache/
+.local-app-data/
+.npm-cache/
 
 # Build output
 dist/
 dist-ssr/
+release/
 
 # Env files
 .env

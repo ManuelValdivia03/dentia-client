@@ -1,11 +1,19 @@
 {
   "name": "dentia-client",
+  "productName": "Dentia",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Aplicacion de escritorio de Dentia",
+  "author": "Dentia",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
+    "desktop": "electron .",
+    "desktop:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env ELECTRON_START_URL=http://127.0.0.1:5173 electron .\"",
+    "desktop:pack": "electron-builder --dir",
+    "desktop:dist": "electron-builder --win",
     "preview": "vite preview",
     "test": "vitest"
   },
@@ -21,10 +29,46 @@
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/test-utils": "^2.4.10",
     "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12",
     "jsdom": "^29.1.1",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
     "vitest": "^4.1.6",
+    "wait-on": "^9.0.3",
     "vue-tsc": "^3.2.8"
+  },
+  "build": {
+    "appId": "com.dentia.desktop",
+    "productName": "Dentia",
+    "artifactName": "Dentia-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dentia"
+    }
   }
 }
