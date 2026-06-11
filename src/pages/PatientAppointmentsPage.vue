@@ -20,6 +20,8 @@ import {
   localDateTimeValue,
   timePartFromDateTime,
 } from '../utils/clinic-time'
+import { getApiErrorMessage } from '../utils/api-error';
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const queryClient = useQueryClient()
 
@@ -173,11 +175,41 @@ const rescheduleAvailabilitySlots = computed(() => {
   return rawSlots.filter((slot) => isSelectableRescheduleSlot(slot))
 })
 
+const appointmentsErrorMessage = computed(() => {
+  if (!appointmentsQuery.error.value) return ''
+  return getApiErrorMessage(appointmentsQuery.error.value)
+})
+
+const dentistsErrorMessage = computed(() => {
+  if (!dentistsQuery.error.value) return ''
+  return getApiErrorMessage(dentistsQuery.error.value)
+})
+
+const rescheduleAvailabilityErrorMessage = computed(() => {
+  if (!rescheduleAvailabilityQuery.error.value) return ''
+  return getApiErrorMessage(rescheduleAvailabilityQuery.error.value)
+})
+
+const actionError = ref('')
+const actionSuccess = ref('')
+
 const cancelMutation = useMutation({
   mutationFn: cancelAppointment,
   onSuccess: () => {
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
   },
+})
+
+const cancelAppointmentModal = ref<{
+  open: boolean
+  appointmentId: string | null
+}>({
+  open: false,
+  appointmentId: null,
+})
+
+const cancelAppointmentMessage = computed(() => {
+  return 'Esta acción cancelará tu cita. El dentista verá el cambio en su agenda.'
 })
 
 const rescheduleMutation = useMutation({
@@ -186,6 +218,8 @@ const rescheduleMutation = useMutation({
     rescheduleTarget.value = null
     rescheduleReason.value = ''
     rescheduleNotes.value = ''
+    actionError.value = ''
+    actionSuccess.value = 'Cita reprogramada correctamente.'
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
   },
 })
@@ -373,11 +407,38 @@ function isRated(appointment: Appointment) {
   return Boolean(appointment.hasRating) || ratedAppointmentIds.value.has(appointment.id)
 }
 
-async function handleCancel(id: string) {
-  const confirmed = window.confirm('¿Cancelar esta cita?')
-  if (!confirmed) return
+function openCancelAppointmentConfirmation(id: string) {
+  actionError.value = ''
+  actionSuccess.value = ''
 
-  await cancelMutation.mutateAsync(id)
+  cancelAppointmentModal.value = {
+    open: true,
+    appointmentId: id,
+  }
+}
+
+function closeCancelAppointmentConfirmation() {
+  cancelAppointmentModal.value = {
+    open: false,
+    appointmentId: null,
+  }
+}
+
+async function confirmCancelAppointment() {
+  const id = cancelAppointmentModal.value.appointmentId
+  if (!id) return
+
+  closeCancelAppointmentConfirmation()
+
+  actionError.value = ''
+  actionSuccess.value = ''
+
+  try {
+    await cancelMutation.mutateAsync(id)
+    actionSuccess.value = 'Cita cancelada correctamente.'
+  } catch (error: unknown) {
+    actionError.value = getApiErrorMessage(error)
+  }
 }
 
 function openReschedule(appointment: Appointment) {
@@ -423,12 +484,8 @@ async function submitReschedule() {
       reason: rescheduleReason.value || undefined,
       notes: rescheduleNotes.value || undefined,
     })
-  } catch (error: any) {
-    const message = error.response?.data?.message ?? error.response?.data?.error
-    rescheduleError.value =
-      typeof message === 'string' && message.includes('startAt must be in the future')
-        ? 'Elige una fecha y hora posteriores al momento actual.'
-        : 'No se pudo reprogramar la cita. Revisa la fecha y la disponibilidad.'
+  } catch (error: unknown) {
+    rescheduleError.value = getApiErrorMessage(error)
   }
 }
 
@@ -466,7 +523,7 @@ async function submitRating() {
     ratingScore.value = 5
 
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
-  } catch (error) {
+  } catch (error: unknown) {
     const message = getRatingErrorMessage(error)
     ratingError.value = message
 
@@ -560,13 +617,32 @@ function getRatingErrorMessage(error: unknown) {
       </button>
     </div>
 
+    <p v-if="actionError" class="error-message">
+      {{ actionError }}
+    </p>
+
+    <p v-if="actionSuccess" class="success-message">
+      {{ actionSuccess }}
+    </p>
+
+    <p v-if="dentistsQuery.isError.value" class="error-message">
+      {{ dentistsErrorMessage }}
+    </p>
+
     <p v-if="appointmentsQuery.isLoading.value">Cargando citas...</p>
 
     <p v-else-if="appointmentsQuery.isError.value" class="error-message">
-      No se pudieron cargar tus citas.
+      {{ appointmentsErrorMessage }}
     </p>
 
-    <p v-if="!appointmentGroups.length" class="empty-message">
+    <p
+      v-else-if="
+        !appointmentsQuery.isLoading.value &&
+        !appointmentsQuery.isError.value &&
+        !appointmentGroups.length
+      "
+      class="empty-message"
+    >
       {{ emptyAppointmentsMessage }}
     </p>
 
@@ -643,7 +719,7 @@ function getRatingErrorMessage(error: unknown) {
                   class="secondary-button inline-button"
                   type="button"
                   :disabled="cancelMutation.isPending.value"
-                  @click="handleCancel(appointment.id)"
+                  @click="openCancelAppointmentConfirmation(appointment.id)"
                 >
                   Cancelar
                 </button>
@@ -724,7 +800,7 @@ function getRatingErrorMessage(error: unknown) {
           <textarea v-model="rescheduleNotes" rows="3" placeholder="Notas opcionales" />
         </label>
         <p v-if="rescheduleAvailabilityQuery.isError.value" class="error-message">
-          No se pudo consultar disponibilidad. Vuelve a intentarlo en unos segundos.
+          {{ rescheduleAvailabilityErrorMessage }}
         </p>
         <p v-if="rescheduleError" class="error-message">{{ rescheduleError }}</p>
         <button class="primary-button" type="submit" :disabled="rescheduleMutation.isPending.value">
@@ -804,6 +880,18 @@ function getRatingErrorMessage(error: unknown) {
           </section>
         </div>
       </Teleport>
+      
+      <ConfirmDialog
+        :open="cancelAppointmentModal.open"
+        variant="danger"
+        title="Cancelar cita"
+        :message="cancelAppointmentMessage"
+        confirm-text="Sí, cancelar cita"
+        cancel-text="Conservar cita"
+        :loading="cancelMutation.isPending.value"
+        @confirm="confirmCancelAppointment"
+        @cancel="closeCancelAppointmentConfirmation"
+      />
   </AppLayout>
 </template>
 
