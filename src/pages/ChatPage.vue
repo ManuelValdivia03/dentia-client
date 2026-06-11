@@ -24,6 +24,7 @@ import {
   userDisplayName,
   type UserSummary,
 } from '../modules/users/users.api'
+import { getApiErrorMessage } from '../utils/api-error'
 
 const authStore = useAuthStore()
 const queryClient = useQueryClient()
@@ -34,9 +35,13 @@ const dentistId = ref(authStore.role === 'DENTIST' ? authStore.user?.domainId ??
 const messageBody = ref('')
 const messageFile = ref<File | null>(null)
 const messageError = ref('')
+const conversationError = ref('')
+const conversationSuccess = ref('')
+const attachmentActionError = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const attachmentUrls = ref<Record<string, string>>({})
 const attachmentErrors = ref<Record<string, string>>({})
+
 const allowedAttachmentTypes = [
   'image/jpeg',
   'image/png',
@@ -45,6 +50,7 @@ const allowedAttachmentTypes = [
   'video/mp4',
   'video/webm',
 ]
+
 const maxAttachmentSize = 50 * 1024 * 1024
 const attachmentAccept = allowedAttachmentTypes.join(',')
 
@@ -153,6 +159,31 @@ const messagesQuery = useQuery({
   refetchInterval: 8000,
 })
 
+const conversationsErrorMessage = computed(() => {
+  if (!conversationsQuery.error.value) return ''
+  return getApiErrorMessage(conversationsQuery.error.value)
+})
+
+const appointmentsErrorMessage = computed(() => {
+  if (!appointmentsQuery.error.value) return ''
+  return getApiErrorMessage(appointmentsQuery.error.value)
+})
+
+const dentistsErrorMessage = computed(() => {
+  if (!dentistsQuery.error.value) return ''
+  return getApiErrorMessage(dentistsQuery.error.value)
+})
+
+const patientsErrorMessage = computed(() => {
+  if (!patientsQuery.error.value) return ''
+  return getApiErrorMessage(patientsQuery.error.value)
+})
+
+const messagesErrorMessage = computed(() => {
+  if (!messagesQuery.error.value) return ''
+  return getApiErrorMessage(messagesQuery.error.value)
+})
+
 const canCreateConversation = computed(() => {
   if (authStore.role === 'PATIENT') {
     return Boolean(authStore.user?.domainId && dentistId.value)
@@ -163,6 +194,10 @@ const canCreateConversation = computed(() => {
   }
 
   return Boolean(patientId.value && dentistId.value)
+})
+
+const canSendMessage = computed(() => {
+  return Boolean(selectedConversationId.value && (messageBody.value.trim() || messageFile.value))
 })
 
 const createConversationMutation = useMutation({
@@ -179,9 +214,12 @@ const sendMessageMutation = useMutation({
     messageBody.value = ''
     messageFile.value = null
     messageError.value = ''
+    attachmentActionError.value = ''
+
     if (fileInput.value) {
       fileInput.value.value = ''
     }
+
     queryClient.invalidateQueries({ queryKey: ['chat'] })
   },
 })
@@ -353,10 +391,10 @@ async function loadAttachmentPreviews(messages: ChatMessage[]) {
           ...attachmentUrls.value,
           [fileId]: URL.createObjectURL(blob),
         }
-      } catch {
+      } catch (error: unknown) {
         attachmentErrors.value = {
           ...attachmentErrors.value,
-          [fileId]: 'No se pudo cargar el archivo.',
+          [fileId]: getApiErrorMessage(error),
         }
       }
     }),
@@ -367,27 +405,24 @@ async function openAttachment(message: ChatMessage) {
   let url = attachmentUrl(message)
   const fileId = attachmentFileId(message)
 
-  if (!url && fileId) {
-    const blob = await downloadClinicalFile(fileId)
-    url = URL.createObjectURL(blob)
-    attachmentUrls.value = {
-      ...attachmentUrls.value,
-      [fileId]: url,
+  attachmentActionError.value = ''
+
+  try {
+    if (!url && fileId) {
+      const blob = await downloadClinicalFile(fileId)
+      url = URL.createObjectURL(blob)
+      attachmentUrls.value = {
+        ...attachmentUrls.value,
+        [fileId]: url,
+      }
     }
-  }
 
-  if (url) {
-    window.open(url, '_blank', 'noopener,noreferrer')
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
+  } catch (error: unknown) {
+    attachmentActionError.value = getApiErrorMessage(error)
   }
-}
-
-function getErrorMessage(error: unknown) {
-  if (typeof error === 'object' && error && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response
-    return response?.data?.message ?? 'No se pudo enviar el archivo.'
-  }
-
-  return 'No se pudo enviar el mensaje.'
 }
 
 function formatDate(value?: string) {
@@ -401,6 +436,9 @@ function formatDate(value?: string) {
 
 async function selectConversation(conversation: Conversation) {
   selectedConversation.value = conversation
+  messageError.value = ''
+  attachmentActionError.value = ''
+
   const id = conversationId(conversation)
 
   if (id) {
@@ -414,18 +452,31 @@ async function submitConversation() {
   const currentDentistId =
     authStore.role === 'DENTIST' ? authStore.user?.domainId : dentistId.value
 
-  if (!currentPatientId || !currentDentistId) return
+  conversationError.value = ''
+  conversationSuccess.value = ''
 
-  await createConversationMutation.mutateAsync({
-    patientId: currentPatientId,
-    dentistId: currentDentistId,
-  })
+  if (!currentPatientId || !currentDentistId) {
+    conversationError.value = 'Selecciona paciente y dentista para iniciar la conversación.'
+    return
+  }
+
+  try {
+    await createConversationMutation.mutateAsync({
+      patientId: currentPatientId,
+      dentistId: currentDentistId,
+    })
+
+    conversationSuccess.value = 'Conversación creada correctamente.'
+  } catch (error: unknown) {
+    conversationError.value = getApiErrorMessage(error)
+  }
 }
 
 function onMessageFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
   messageError.value = ''
+  attachmentActionError.value = ''
 
   if (!file) {
     messageFile.value = null
@@ -435,7 +486,7 @@ function onMessageFileChange(event: Event) {
   if (!allowedAttachmentTypes.includes(file.type)) {
     messageFile.value = null
     input.value = ''
-    messageError.value = 'Solo puedes enviar imagenes, videos o PDF.'
+    messageError.value = 'Solo puedes enviar imágenes, videos o PDF.'
     return
   }
 
@@ -450,22 +501,29 @@ function onMessageFileChange(event: Event) {
 }
 
 async function submitMessage() {
-  if (!selectedConversationId.value || (!messageBody.value && !messageFile.value)) {
+  messageError.value = ''
+
+  if (!selectedConversationId.value) {
+    messageError.value = 'Selecciona una conversación.'
     return
   }
 
-  messageError.value = ''
+  if (!messageBody.value.trim() && !messageFile.value) {
+    messageError.value = 'Escribe un mensaje o adjunta un archivo.'
+    return
+  }
 
   try {
     await sendMessageMutation.mutateAsync({
       conversationId: selectedConversationId.value,
-      body: messageBody.value || undefined,
+      body: messageBody.value.trim() || undefined,
       file: messageFile.value,
     })
-  } catch (error) {
-    messageError.value = getErrorMessage(error)
+  } catch (error: unknown) {
+    messageError.value = getApiErrorMessage(error)
   }
 }
+
 </script>
 
 <template>
@@ -529,11 +587,39 @@ async function submitMessage() {
             type="submit"
             :disabled="createConversationMutation.isPending.value || !canCreateConversation"
           >
-            Crear conversación
+            {{ createConversationMutation.isPending.value ? 'Creando...' : 'Crear conversación' }}
           </button>
         </form>
 
-        <div v-if="conversationsQuery.data.value?.length" class="list chat-list">
+        <p v-if="conversationError" class="error-message">
+          {{ conversationError }}
+        </p>
+
+        <p v-if="conversationSuccess" class="success-message">
+          {{ conversationSuccess }}
+        </p>
+
+        <p v-if="appointmentsQuery.isError.value" class="error-message">
+          {{ appointmentsErrorMessage }}
+        </p>
+
+        <p v-if="dentistsQuery.isError.value" class="error-message">
+          {{ dentistsErrorMessage }}
+        </p>
+
+        <p v-if="patientsQuery.isError.value" class="error-message">
+          {{ patientsErrorMessage }}
+        </p>
+
+        <p v-if="conversationsQuery.isLoading.value">
+          Cargando conversaciones...
+        </p>
+
+        <p v-else-if="conversationsQuery.isError.value" class="error-message">
+          {{ conversationsErrorMessage }}
+        </p>
+
+        <div v-else-if="conversationsQuery.data.value?.length" class="list chat-list">
           <button
             v-for="conversation in conversationsQuery.data.value"
             :key="conversationId(conversation)"
@@ -560,7 +646,15 @@ async function submitMessage() {
             </div>
           </div>
 
-          <div class="messages-list">
+          <p v-if="messagesQuery.isLoading.value">
+            Cargando mensajes...
+          </p>
+
+          <p v-else-if="messagesQuery.isError.value" class="error-message">
+            {{ messagesErrorMessage }}
+          </p>
+
+          <div v-else class="messages-list">
             <div
               v-for="message in messagesQuery.data.value ?? []"
               :key="message.id ?? message._id"
@@ -568,17 +662,20 @@ async function submitMessage() {
               :class="{ own: isOwnMessage(message) }"
             >
               <p>{{ message.body ?? attachmentLabel(message) }}</p>
+
               <div v-if="message.attachment" class="message-attachment">
                 <img
                   v-if="isImageAttachment(message) && canPreviewAttachment(message)"
                   :src="attachmentUrl(message)"
                   :alt="attachmentLabel(message)"
                 />
+
                 <video
                   v-else-if="isVideoAttachment(message) && canPreviewAttachment(message)"
                   :src="attachmentUrl(message)"
                   controls
                 />
+
                 <button
                   v-else-if="canPreviewAttachment(message)"
                   class="attachment-link"
@@ -587,33 +684,58 @@ async function submitMessage() {
                 >
                   {{ attachmentLabel(message) }}
                 </button>
+
                 <small v-else>
                   {{ attachmentErrors[attachmentFileId(message)] ?? 'Cargando archivo...' }}
                 </small>
               </div>
-              <span>{{ messageSenderName(message) }} · {{ formatDate(message.createdAt) }}</span>
+
+              <span>
+                {{ messageSenderName(message) }} · {{ formatDate(message.createdAt) }}
+              </span>
+            </div>
+
+            <div v-if="!(messagesQuery.data.value ?? []).length" class="empty-state">
+              No hay mensajes en esta conversación.
             </div>
           </div>
 
+          <p v-if="attachmentActionError" class="error-message">
+            {{ attachmentActionError }}
+          </p>
+
           <form class="message-form" @submit.prevent="submitMessage">
-            <textarea v-model="messageBody" rows="3" placeholder="Escribe un mensaje" />
+            <textarea
+              v-model="messageBody"
+              rows="3"
+              placeholder="Escribe un mensaje"
+            />
+
             <small class="muted-text">
               Adjuntos permitidos: JPG, PNG, WEBP, PDF, MP4 o WEBM. Peso máximo: 50 MB.
             </small>
+
             <input
               ref="fileInput"
               type="file"
               :accept="attachmentAccept"
               @change="onMessageFileChange"
             />
+
             <p v-if="messageFile" class="muted-text">
               Archivo listo: {{ messageFile.name }}
             </p>
+
             <p v-if="messageError" class="error-message">
               {{ messageError }}
             </p>
-            <button class="primary-button" type="submit" :disabled="sendMessageMutation.isPending.value">
-              Enviar
+
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="sendMessageMutation.isPending.value || !canSendMessage"
+            >
+              {{ sendMessageMutation.isPending.value ? 'Enviando...' : 'Enviar' }}
             </button>
           </form>
         </template>
