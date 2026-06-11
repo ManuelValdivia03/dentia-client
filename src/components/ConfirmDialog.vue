@@ -155,7 +155,7 @@ const emit = defineEmits<{
   width: 100%;
   min-width: 0;
   min-height: 56px;
-  border-radius: 999px;
+  border-radius: 16px;
   padding: 12px 18px;
   font-weight: 800;
   line-height: 1.2;

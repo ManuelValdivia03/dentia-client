@@ -30,7 +30,6 @@ const router = useRouter()
 const search = ref('')
 const filtersOpen = ref(false)
 const specialtyFilter = ref('')
-const showDentistDirectory = ref(false)
 const selectedDentist = ref<Dentist | null>(null)
 const failedPhotoDentistIds = ref(new Set<string>())
 const appointmentDate = ref('')
@@ -40,7 +39,18 @@ const notes = ref('')
 const isCreating = ref(false)
 const formError = ref('')
 const formSuccess = ref('')
+const pageSuccess = ref('')
+const pageError = ref('')
 const today = computed(() => getClinicNowKey().slice(0, 10))
+const relevantAppointmentStatuses = [
+  'PENDING',
+  'REQUESTED',
+  'CONFIRMED',
+  'SCHEDULED',
+  'COMPLETED',
+  'ATTENDED',
+]
+
 const isAppointmentDatePast = computed(
   () => Boolean(appointmentDate.value) && appointmentDate.value < today.value,
 )
@@ -102,19 +112,18 @@ const filteredDentists = computed(() => {
   })
 })
 
-const primaryDentistAppointment = computed(() => {
+const highlightedDentistAppointment = computed(() => {
   const appointments = appointmentsQuery.data.value ?? []
-  const relatedAppointments = appointments
-    .filter((appointment) => isPatientDentistRelation(appointment))
-    .sort((a, b) => {
-      return new Date(b.startAt).getTime() - new Date(a.startAt).getTime()
-    })
 
-  return relatedAppointments[0]
+  return appointments
+    .filter((appointment) =>
+      relevantAppointmentStatuses.includes(appointment.status.toUpperCase()),
+    )
+    .sort((a, b) => appointmentTimestamp(b) - appointmentTimestamp(a))[0] ?? null
 })
 
-const primaryDentist = computed(() => {
-  const dentistId = primaryDentistAppointment.value?.dentistId
+const highlightedDentist = computed(() => {
+  const dentistId = highlightedDentistAppointment.value?.dentistId
   if (!dentistId) return null
 
   return (dentistsQuery.data.value ?? []).find(
@@ -122,17 +131,8 @@ const primaryDentist = computed(() => {
   ) ?? null
 })
 
-const shouldShowDirectory = computed(() => {
-  return !primaryDentist.value || showDentistDirectory.value
-})
-
 const visibleDirectoryDentists = computed(() => {
-  const dentists = dentistsQuery.data.value ?? []
-  const primaryDentistId = primaryDentist.value?.domainId
-
-  if (!primaryDentistId) return dentists
-
-  return dentists.filter((dentist) => dentist.domainId !== primaryDentistId)
+  return dentistsQuery.data.value ?? []
 })
 
 const specialtyOptions = computed(() => {
@@ -184,6 +184,22 @@ watch(appointmentTime, (time) => {
   }
 })
 
+type AppointmentWithAuditDates = Appointment & {
+  createdAt?: string
+  updatedAt?: string
+}
+
+function appointmentTimestamp(appointment: Appointment) {
+  const item = appointment as AppointmentWithAuditDates
+
+  return new Date(
+    item.updatedAt ??
+    item.createdAt ??
+    item.startAt ??
+    0,
+  ).getTime()
+}
+
 function dentistName(dentist: Dentist) {
   return dentist.fullName ?? dentist.name ?? dentist.email ?? 'Dentista sin nombre'
 }
@@ -209,23 +225,37 @@ function openDentistDetail(dentist: Dentist) {
   router.push(`/patient/dentists/${dentist.domainId}`)
 }
 
-function isPatientDentistRelation(appointment: Appointment) {
-  const status = appointment.status.toUpperCase()
-  return status === 'CONFIRMED' || status === 'COMPLETED'
-}
-
 function clearFilters() {
   search.value = ''
   specialtyFilter.value = ''
 }
 
-function toggleDentistDirectory() {
-  showDentistDirectory.value = !showDentistDirectory.value
+function dentistStatus(dentist: Dentist) {
+  const appointments = (appointmentsQuery.data.value ?? [])
+    .filter((appointment) => appointment.dentistId === dentist.domainId)
+    .sort((a, b) => appointmentTimestamp(b) - appointmentTimestamp(a))
 
-  if (!showDentistDirectory.value) {
-    clearFilters()
-    filtersOpen.value = false
+  const latestAppointment = appointments.find((appointment) =>
+    relevantAppointmentStatuses.includes(appointment.status.toUpperCase()),
+  )
+
+  if (!latestAppointment) return ''
+
+  const status = latestAppointment.status.toUpperCase()
+
+  if (status === 'PENDING' || status === 'REQUESTED') {
+    return 'Solicitud enviada'
   }
+
+  if (status === 'CONFIRMED' || status === 'SCHEDULED') {
+    return 'Cita confirmada'
+  }
+
+  if (status === 'COMPLETED' || status === 'ATTENDED') {
+    return 'Ya te atendió'
+  }
+
+  return ''
 }
 
 function openSchedule(dentist: Dentist) {
@@ -236,6 +266,8 @@ function openSchedule(dentist: Dentist) {
   notes.value = ''
   formError.value = ''
   formSuccess.value = ''
+  pageSuccess.value = ''
+  pageError.value = ''
 }
 
 function closeSchedule() {
@@ -316,7 +348,7 @@ async function submitAppointment() {
   isCreating.value = true
 
   try {
-    await createAppointment({
+    const createdAppointment = await createAppointment({
       dentistId: selectedDentist.value.domainId,
       startAt: localDateTimeValue(appointmentDate.value, appointmentTime.value),
       endAt: addMinutesToLocalDateTime(appointmentDate.value, appointmentTime.value, 60),
@@ -324,8 +356,13 @@ async function submitAppointment() {
       notes: notes.value || undefined,
     })
 
-    formSuccess.value = 'Cita agendada correctamente.'
-    queryClient.invalidateQueries({ queryKey: ['appointments'] })
+    queryClient.setQueryData<Appointment[]>(['appointments'], (current) => {
+      return [createdAppointment, ...(current ?? [])]
+    })
+
+    pageSuccess.value = 'Solicitud de cita enviada correctamente.'
+    await queryClient.invalidateQueries({ queryKey: ['appointments'] })
+    closeSchedule()
   } catch (error: unknown) {
     formError.value = getApiErrorMessage(error)
   } finally {
@@ -348,52 +385,77 @@ function hasDentistPhotoFailed(dentist: Dentist) {
       </div>
     </div>
 
-    <section v-if="primaryDentist" class="featured-dentist-card">
+    <p v-if="pageSuccess" class="success-message">
+      {{ pageSuccess }}
+    </p>
+
+    <p v-if="pageError" class="error-message">
+      {{ pageError }}
+    </p>
+
+    <section v-if="highlightedDentist" class="featured-dentist-card">
       <div class="featured-dentist-photo">
         <img
-          v-if="dentistPhotoUrl(primaryDentist)"
-          :src="dentistPhotoUrl(primaryDentist)"
-          :alt="`Foto de ${dentistName(primaryDentist)}`"
-          @error="handleDentistPhotoError(primaryDentist)"
+          v-if="dentistPhotoUrl(highlightedDentist)"
+          :src="dentistPhotoUrl(highlightedDentist)"
+          :alt="`Foto de ${dentistName(highlightedDentist)}`"
+          @error="handleDentistPhotoError(highlightedDentist)"
         />
-        <span v-else>{{ dentistName(primaryDentist).charAt(0).toUpperCase() }}</span>
+        <span v-else>
+          {{ dentistName(highlightedDentist).charAt(0).toUpperCase() }}
+        </span>
       </div>
 
-      <p v-if="hasDentistPhotoFailed(primaryDentist)" class="muted-text">
+      <p v-if="hasDentistPhotoFailed(highlightedDentist)" class="muted-text">
         Foto no disponible
       </p>
 
       <div class="featured-dentist-info">
-        <p class="eyebrow">Tu dentista</p>
-        <h3>{{ dentistName(primaryDentist) }}</h3>
-        <span v-if="primaryDentist.previouslyVisited" class="status-badge">
-          Ya te atendió
+        <p class="eyebrow">Seguimiento actual</p>
+        <h3>{{ dentistName(highlightedDentist) }}</h3>
+
+        <span
+          v-if="dentistStatus(highlightedDentist)"
+          class="status-badge"
+        >
+          {{ dentistStatus(highlightedDentist) }}
         </span>
-        <p>{{ primaryDentist.specialty ?? 'Odontología general' }}</p>
-        <p v-if="primaryDentist.descripcion" class="featured-dentist-description">
-          {{ primaryDentist.descripcion }}
+
+        <p>{{ highlightedDentist.specialty ?? 'Odontología general' }}</p>
+
+        <p
+          v-if="highlightedDentist.descripcion"
+          class="featured-dentist-description"
+        >
+          {{ highlightedDentist.descripcion }}
         </p>
 
         <div class="row-actions">
-          <button class="primary-button inline-button" type="button" @click="openSchedule(primaryDentist)">
+          <button
+            class="primary-button inline-button"
+            type="button"
+            @click="openSchedule(highlightedDentist)"
+          >
             Agendar seguimiento
           </button>
-          <button class="secondary-button inline-button" type="button" @click="openDentistDetail(primaryDentist)">
+
+          <button
+            class="secondary-button inline-button"
+            type="button"
+            @click="openDentistDetail(highlightedDentist)"
+          >
             Ver perfil
-          </button>
-          <button class="secondary-button inline-button" type="button" @click="toggleDentistDirectory">
-            {{ showDentistDirectory ? 'Ocultar cambio' : 'Cambiar dentista' }}
           </button>
         </div>
       </div>
     </section>
 
-    <div v-if="shouldShowDirectory" class="toolbar">
+    <div class="toolbar">
       <input
         v-model="search"
         class="search-input"
         type="search"
-        :placeholder="primaryDentist ? 'Buscar otro dentista' : 'Buscar por nombre o especialidad'"
+        placeholder="Buscar por nombre o especialidad"
       />
 
       <button
@@ -407,7 +469,7 @@ function hasDentistPhotoFailed(dentist: Dentist) {
       </button>
     </div>
 
-    <div v-if="shouldShowDirectory && filtersOpen" id="dentist-filters" class="filter-panel">
+    <div v-if="filtersOpen" id="dentist-filters" class="filter-panel">
       <label>
         Especialidad
         <select v-model="specialtyFilter">
@@ -438,7 +500,7 @@ function hasDentistPhotoFailed(dentist: Dentist) {
       {{ dentistsErrorMessage }}
     </p>
 
-    <div v-else-if="shouldShowDirectory && filteredDentists.length" class="cards-grid">
+    <div v-else-if="filteredDentists.length" class="cards-grid">
       <article
         v-for="dentist in filteredDentists"
         :key="dentist.domainId"
@@ -457,22 +519,30 @@ function hasDentistPhotoFailed(dentist: Dentist) {
               :alt="`Foto de ${dentistName(dentist)}`"
               @error="handleDentistPhotoError(dentist)"
             />
-            <span v-else>{{ dentistName(dentist).charAt(0).toUpperCase() }}</span>
+            <span v-else>
+              {{ dentistName(dentist).charAt(0).toUpperCase() }}
+            </span>
           </div>
 
           <div>
             <h3>{{ dentistName(dentist) }}</h3>
+
             <p v-if="hasDentistPhotoFailed(dentist)" class="muted-text">
               Foto no disponible
             </p>
-            <span v-if="dentist.previouslyVisited" class="status-badge">
-              Ya te atendió
+
+            <span
+              v-if="dentistStatus(dentist)"
+              class="status-badge"
+            >
+              {{ dentistStatus(dentist) }}
             </span>
+
             <p>{{ dentist.specialty ?? 'Odontología general' }}</p>
           </div>
         </div>
 
-        <p style="margin-top: 14px">
+        <p class="dentist-card-description">
           Disponible para consulta y seguimiento clínico.
         </p>
 
@@ -494,7 +564,6 @@ function hasDentistPhotoFailed(dentist: Dentist) {
 
     <div
       v-if="
-        shouldShowDirectory &&
         !dentistsQuery.isLoading.value &&
         !dentistsQuery.isError.value &&
         !filteredDentists.length
@@ -515,7 +584,11 @@ function hasDentistPhotoFailed(dentist: Dentist) {
             </p>
           </div>
 
-          <button class="secondary-button inline-button" type="button" @click="closeSchedule">
+          <button
+            class="secondary-button inline-button"
+            type="button"
+            @click="closeSchedule"
+          >
             Cerrar
           </button>
         </div>
@@ -579,8 +652,14 @@ function hasDentistPhotoFailed(dentist: Dentist) {
           <p v-if="availabilityQuery.isError.value" class="error-message">
             {{ availabilityErrorMessage }}
           </p>
-          <p v-if="formError" class="error-message">{{ formError }}</p>
-          <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>
+
+          <p v-if="formError" class="error-message">
+            {{ formError }}
+          </p>
+
+          <p v-if="formSuccess" class="success-message">
+            {{ formSuccess }}
+          </p>
 
           <button class="primary-button" type="submit" :disabled="isCreating">
             {{ isCreating ? 'Agendando...' : 'Confirmar cita' }}
@@ -604,5 +683,118 @@ function hasDentistPhotoFailed(dentist: Dentist) {
   font-size: 0.85rem;
   font-weight: 700;
   line-height: 1;
+}
+
+.dentist-card-description {
+  margin-top: 14px;
+  min-height: 56px;
+  line-height: 1.55;
+  color: #64748b;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+}
+
+.cards-grid .card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.cards-grid .card-header {
+  margin-bottom: 12px;
+}
+
+.cards-grid .card .card-actions {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.cards-grid .card p {
+  line-height: 1.55;
+}
+
+.featured-dentist-card {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 28px;
+  align-items: center;
+  padding: 28px 32px;
+  min-height: auto;
+}
+
+.featured-dentist-photo,
+.featured-dentist-photo img,
+.featured-dentist-photo span {
+  width: 150px;
+  height: 150px;
+}
+
+.featured-dentist-photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.featured-dentist-photo span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: #0f6b84;
+  color: #ffffff;
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #0f6b84;
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.featured-dentist-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.featured-dentist-info h3 {
+  margin: 0;
+}
+
+.featured-dentist-description {
+  margin: 2px 0 8px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.featured-dentist-info .row-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 </style>
