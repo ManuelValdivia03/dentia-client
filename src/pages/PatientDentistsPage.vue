@@ -22,6 +22,8 @@ import {
   localDateTimeValue,
   timePartFromDateTime,
 } from '../utils/clinic-time'
+import { getApiErrorMessage } from '../utils/api-error'
+
 const queryClient = useQueryClient()
 const router = useRouter()
 
@@ -67,6 +69,21 @@ const ratingsQuery = useQuery({
   queryKey: ['dentists', 'ratings', computed(() => selectedDentist.value?.domainId)],
   queryFn: () => getDentistRatingsSummary(selectedDentist.value!.domainId),
   enabled: computed(() => Boolean(selectedDentist.value?.domainId)),
+})
+
+const dentistsErrorMessage = computed(() => {
+  if (!dentistsQuery.error.value) return ''
+  return getApiErrorMessage(dentistsQuery.error.value)
+})
+
+const availabilityErrorMessage = computed(() => {
+  if (!availabilityQuery.error.value) return ''
+  return getApiErrorMessage(availabilityQuery.error.value)
+})
+
+const appointmentsErrorMessage = computed(() => {
+  if (!appointmentsQuery.error.value) return ''
+  return getApiErrorMessage(appointmentsQuery.error.value)
 })
 
 const filteredDentists = computed(() => {
@@ -275,38 +292,6 @@ function isSelectableSlot(slot: unknown) {
   )
 }
 
-
-function getAppointmentCreateErrorMessage(error: unknown) {
-  const response =
-    typeof error === 'object' && error && 'response' in error
-      ? (error as { response?: { status?: number; data?: { message?: string; error?: string } } }).response
-      : undefined
-
-  const status = response?.status
-  const message = response?.data?.message ?? response?.data?.error
-
-  if (message === 'Patient already has a pending appointment request in this time range') {
-    return 'Ya tienes una solicitud pendiente para ese dentista en ese horario.'
-  }
-
-  if (
-    status === 409 ||
-    message === 'Dentist already has an appointment in this time range'
-  ) {
-    return 'El dentista ya tiene una cita en ese horario. Selecciona otro horario.'
-  }
-
-  if (typeof message === 'string' && message.includes('startAt must be in the future')) {
-    return 'Elige una fecha y hora posteriores al momento actual.'
-  }
-
-  if (message === 'startAt must be before endAt') {
-    return 'La hora de inicio debe ser anterior a la hora de fin.'
-  }
-
-  return 'No se pudo agendar la cita. Revisa la fecha y la disponibilidad.'
-}
-
 async function submitAppointment() {
   formError.value = ''
   formSuccess.value = ''
@@ -341,12 +326,17 @@ async function submitAppointment() {
 
     formSuccess.value = 'Cita agendada correctamente.'
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
-  } catch (error: any) {
-    formError.value = getAppointmentCreateErrorMessage(error)
+  } catch (error: unknown) {
+    formError.value = getApiErrorMessage(error)
   } finally {
     isCreating.value = false
   }
 }
+
+function hasDentistPhotoFailed(dentist: Dentist) {
+  return failedPhotoDentistIds.value.has(dentist.domainId)
+}
+
 </script>
 
 <template>
@@ -368,6 +358,10 @@ async function submitAppointment() {
         />
         <span v-else>{{ dentistName(primaryDentist).charAt(0).toUpperCase() }}</span>
       </div>
+
+      <p v-if="hasDentistPhotoFailed(primaryDentist)" class="muted-text">
+        Foto no disponible
+      </p>
 
       <div class="featured-dentist-info">
         <p class="eyebrow">Tu dentista</p>
@@ -441,7 +435,7 @@ async function submitAppointment() {
     <p v-if="dentistsQuery.isLoading.value">Cargando dentistas...</p>
 
     <p v-else-if="dentistsQuery.isError.value" class="error-message">
-      No se pudieron cargar los dentistas.
+      {{ dentistsErrorMessage }}
     </p>
 
     <div v-else-if="shouldShowDirectory && filteredDentists.length" class="cards-grid">
@@ -468,6 +462,9 @@ async function submitAppointment() {
 
           <div>
             <h3>{{ dentistName(dentist) }}</h3>
+            <p v-if="hasDentistPhotoFailed(dentist)" class="muted-text">
+              Foto no disponible
+            </p>
             <span v-if="dentist.previouslyVisited" class="status-badge">
               Ya te atendió
             </span>
@@ -491,7 +488,19 @@ async function submitAppointment() {
       </article>
     </div>
 
-    <div v-else-if="shouldShowDirectory" class="empty-state">
+    <p v-if="appointmentsQuery.isError.value" class="error-message">
+      {{ appointmentsErrorMessage }}
+    </p>
+
+    <div
+      v-if="
+        shouldShowDirectory &&
+        !dentistsQuery.isLoading.value &&
+        !dentistsQuery.isError.value &&
+        !filteredDentists.length
+      "
+      class="empty-state"
+    >
       No hay dentistas disponibles con ese filtro.
     </div>
 
@@ -568,7 +577,7 @@ async function submitAppointment() {
           </label>
 
           <p v-if="availabilityQuery.isError.value" class="error-message">
-            No se pudo consultar disponibilidad. Vuelve a intentarlo en unos segundos.
+            {{ availabilityErrorMessage }}
           </p>
           <p v-if="formError" class="error-message">{{ formError }}</p>
           <p v-if="formSuccess" class="success-message">{{ formSuccess }}</p>
