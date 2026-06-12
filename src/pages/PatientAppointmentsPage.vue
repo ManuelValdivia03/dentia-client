@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import axios from 'axios'
 import AppLayout from '../layouts/AppLayout.vue'
 import {
   cancelAppointment,
+  getAppointment,
   getAppointmentAvailability,
   getAppointments,
   rateAppointment,
@@ -355,10 +357,7 @@ function canCancel(appointment: Appointment) {
 
 function canReschedule(appointment: Appointment) {
   const status = normalizeStatus(appointment.status)
-  return (
-    (status === 'PENDING' || status === 'CONFIRMED') &&
-    isFutureAppointment(appointment)
-  )
+  return status === 'PENDING' && isFutureAppointment(appointment)
 }
 
 function canRate(appointment: Appointment) {
@@ -416,6 +415,16 @@ async function submitReschedule() {
   }
 
   try {
+    const currentAppointment = await getAppointment(rescheduleTarget.value.id)
+
+    if (normalizeStatus(currentAppointment.status) !== 'PENDING') {
+      rescheduleError.value =
+        'La cita ya fue confirmada o cambió de estado y no puede reprogramarse.'
+      rescheduleTarget.value = currentAppointment
+      await queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      return
+    }
+
     await rescheduleMutation.mutateAsync({
       id: rescheduleTarget.value.id,
       startAt: localDateTimeValue(rescheduleDate.value, rescheduleTime.value),
@@ -424,12 +433,69 @@ async function submitReschedule() {
       notes: rescheduleNotes.value || undefined,
     })
   } catch (error: any) {
-    const message = error.response?.data?.message ?? error.response?.data?.error
-    rescheduleError.value =
-      typeof message === 'string' && message.includes('startAt must be in the future')
-        ? 'Elige una fecha y hora posteriores al momento actual.'
-        : 'No se pudo reprogramar la cita. Revisa la fecha y la disponibilidad.'
+    rescheduleError.value = getRescheduleErrorMessage(error)
+
+    if (axios.isAxiosError(error) && error.response?.status === 409) {
+      await queryClient.invalidateQueries({ queryKey: ['appointments'] })
+    }
   }
+}
+
+function getRescheduleErrorMessage(error: unknown) {
+  if (!axios.isAxiosError(error)) {
+    return 'No se pudo reprogramar la cita. Inténtalo nuevamente.'
+  }
+
+  if (error.code === 'ECONNABORTED') {
+    return 'La solicitud tardó demasiado. Verifica tu conexión e inténtalo nuevamente.'
+  }
+
+  if (!error.response) {
+    return 'No fue posible conectar con el servicio. Verifica tu conexión e inténtalo nuevamente.'
+  }
+
+  const status = error.response.status
+  const data = error.response.data as { message?: unknown; error?: unknown } | undefined
+  const rawMessage = data?.message ?? data?.error
+  const message = typeof rawMessage === 'string' ? rawMessage : ''
+
+  if (status === 401) {
+    return 'Tu sesión terminó. Inicia sesión nuevamente para continuar.'
+  }
+
+  if (status === 403) {
+    return 'No tienes permiso para reprogramar esta cita.'
+  }
+
+  if (status === 404) {
+    return 'La cita ya no está disponible. Actualiza la lista para consultar su estado.'
+  }
+
+  if (status === 409) {
+    if (message.includes('Only pending appointments can be rescheduled')) {
+      return 'La cita ya fue confirmada o cambió de estado y no puede reprogramarse.'
+    }
+
+    if (message.includes('Dentist already has an appointment in this time range')) {
+      return 'Ese horario ya no está disponible. Selecciona otro horario.'
+    }
+
+    return 'La cita cambió o el horario ya no está disponible. Actualiza la lista e inténtalo nuevamente.'
+  }
+
+  if (status === 400) {
+    if (message.includes('startAt must be in the future')) {
+      return 'Elige una fecha y hora posteriores al momento actual.'
+    }
+
+    if (message.includes('startAt must be before endAt')) {
+      return 'La hora seleccionada no es válida. Elige otro horario.'
+    }
+
+    return 'Los datos de la reprogramación no son válidos. Revisa la fecha y el horario.'
+  }
+
+  return 'No se pudo reprogramar la cita en este momento. Inténtalo más tarde.'
 }
 
 function openRating(appointment: Appointment) {
