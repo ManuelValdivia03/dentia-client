@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '../layouts/AppLayout.vue'
 import { useAuthStore } from '../stores/auth.store'
+import { getApiErrorMessage } from '../utils/api-error'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -12,6 +13,8 @@ const specialty = ref(authStore.user?.specialty ?? '')
 const escuela = ref(authStore.user?.escuela ?? '')
 const descripcion = ref(authStore.user?.descripcion ?? '')
 const photo = ref<File | null>(null)
+const localPhotoPreviewUrl = ref('')
+const photoVersion = ref(Date.now())
 const isSaving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -72,13 +75,19 @@ const profileSafeNote = computed(() =>
 )
 
 const photoUrl = computed(() => {
+  if (localPhotoPreviewUrl.value) {
+    return localPhotoPreviewUrl.value
+  }
+
   const url = authStore.user?.photoUrl
   if (!url) return ''
 
-  if (url.startsWith('http')) return url
+  const normalizedUrl = url.startsWith('http')
+    ? url
+    : `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'}${url}`
 
-  const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
-  return `${baseUrl}${url}`
+  const separator = normalizedUrl.includes('?') ? '&' : '?'
+  return `${normalizedUrl}${separator}v=${photoVersion.value}`
 })
 
 const initials = computed(() => {
@@ -93,10 +102,43 @@ const initials = computed(() => {
 
 function onPhotoChange(event: Event) {
   const input = event.target as HTMLInputElement
-  photo.value = input.files?.[0] ?? null
+  const selectedPhoto = input.files?.[0] ?? null
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  const maxSizeBytes = 5 * 1024 * 1024
+
+  if (selectedPhoto && !allowedTypes.includes(selectedPhoto.type)) {
+    errorMessage.value = 'Formato no compatible. Usa JPG, PNG o WEBP.'
+    photo.value = null
+    input.value = ''
+    return
+  }
+
+  if (selectedPhoto && selectedPhoto.size > maxSizeBytes) {
+    errorMessage.value = 'La foto supera el tamaño máximo de 5 MB.'
+    photo.value = null
+    input.value = ''
+    return
+  }
+
+  if (localPhotoPreviewUrl.value) {
+    URL.revokeObjectURL(localPhotoPreviewUrl.value)
+    localPhotoPreviewUrl.value = ''
+  }
+
+  photo.value = selectedPhoto
   successMessage.value = ''
   errorMessage.value = ''
+
+  if (selectedPhoto) {
+    localPhotoPreviewUrl.value = URL.createObjectURL(selectedPhoto)
+  }
 }
+
+onBeforeUnmount(() => {
+  if (localPhotoPreviewUrl.value) {
+    URL.revokeObjectURL(localPhotoPreviewUrl.value)
+  }
+})
 
 async function saveProfile() {
   errorMessage.value = ''
@@ -128,22 +170,18 @@ async function saveProfile() {
     initialProfile.value = nextProfile
     successMessage.value = 'Perfil actualizado correctamente.'
     photo.value = null
+    photoVersion.value = Date.now()
+
+    if (localPhotoPreviewUrl.value) {
+      URL.revokeObjectURL(localPhotoPreviewUrl.value)
+      localPhotoPreviewUrl.value = ''
+    }
 
     if (photoInput.value) {
       photoInput.value.value = ''
     }
-  } catch (error: any) {
-    const responseMessage =
-      error.response?.data?.message ??
-      error.response?.data?.error ??
-      error.response?.data
-
-    errorMessage.value =
-      typeof responseMessage === 'string'
-        ? responseMessage
-        : Array.isArray(responseMessage)
-          ? responseMessage.join(', ')
-          : 'No se pudo actualizar el perfil'
+  } catch (error: unknown) {
+    errorMessage.value = getApiErrorMessage(error)
   } finally {
     isSaving.value = false
   }

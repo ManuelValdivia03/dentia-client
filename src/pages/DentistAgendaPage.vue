@@ -20,6 +20,8 @@ import {
   userDisplayName,
 } from '../modules/users/users.api'
 import { useRoute, useRouter } from 'vue-router'
+import { getApiErrorMessage } from '../utils/api-error'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const queryClient = useQueryClient()
 
@@ -34,6 +36,23 @@ const indications = ref('')
 const prescriptionNotes = ref('')
 const appointmentActionErrors = ref<Record<string, string>>({})
 const prescriptionError = ref('')
+const actionSuccess = ref('')
+
+const appointmentsErrorMessage = computed(() => {
+  if (!appointmentsQuery.error.value) return ''
+  return getApiErrorMessage(appointmentsQuery.error.value)
+})
+
+const patientsErrorMessage = computed(() => {
+  if (!patientsQuery.error.value) return ''
+  return getApiErrorMessage(patientsQuery.error.value)
+})
+
+const prescriptionsErrorMessage = computed(() => {
+  if (!prescriptionsByAppointmentQuery.error.value) return ''
+  return getApiErrorMessage(prescriptionsByAppointmentQuery.error.value)
+})
+
 const route = useRoute()
 const router = useRouter()
 
@@ -84,6 +103,12 @@ const confirmMutation = useMutation({
   onSuccess: () => {
     queryClient.invalidateQueries({ queryKey: ['appointments'] })
   },
+})
+
+const confirmationSecondaryText = computed(() => {
+  if (confirmationModal.value.action === 'cancel') return 'Conservar cita'
+  if (confirmationModal.value.action === 'complete') return 'Aún no'
+  return 'Cerrar'
 })
 
 const completeMutation = useMutation({
@@ -177,6 +202,22 @@ const patientNameById = computed(() => {
   )
 })
 
+const confirmationModal = ref<{
+  open: boolean
+  title: string
+  message: string
+  confirmText: string
+  appointmentId: string | null
+  action: 'cancel' | 'complete' | null
+}>({
+  open: false,
+  title: '',
+  message: '',
+  confirmText: '',
+  appointmentId: null,
+  action: null,
+})
+
 function normalizeStatus(status: string) {
   return status.toUpperCase()
 }
@@ -246,7 +287,6 @@ function updateStatusFilter(status: string) {
     },
   })
 }
-
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString('es-MX', {
@@ -400,40 +440,107 @@ function prescriptionButtonLabel(appointment: Appointment) {
 
 async function handleConfirm(id: string) {
   clearActionError(id)
+  actionSuccess.value = ''
 
   try {
     await confirmMutation.mutateAsync(id)
-  } catch (error) {
+    actionSuccess.value = 'Cita confirmada correctamente.'
+  } catch (error: unknown) {
     setActionError(id, getActionErrorMessage(error))
   }
 }
 
-async function handleComplete(appointment: Appointment) {
+function openCancelConfirmation(appointment: Appointment) {
   clearActionError(appointment.id)
+  actionSuccess.value = ''
 
-  if (!canCompleteNow(appointment)) {
-    setActionError(appointment.id, completionBlockedMessage(appointment))
+  if (!canCancel(appointment)) {
+    setActionError(appointment.id, 'Solo puedes cancelar citas pendientes o confirmadas.')
     return
   }
 
-  const confirmed = window.confirm('¿Marcar esta cita como completada?')
-  if (!confirmed) return
+  confirmationModal.value = {
+    open: true,
+    title: 'Cancelar cita',
+    message: 'Esta acción cancelará la cita y el paciente verá el cambio en su historial.',
+    confirmText: 'Sí, cancelar cita',
+    appointmentId: appointment.id,
+    action: 'cancel',
+  }
+}
+
+function openCompleteConfirmation(appointment: Appointment) {
+  clearActionError(appointment.id)
+  actionSuccess.value = ''
+
+  if (!canComplete(appointment)) {
+    setActionError(appointment.id, 'Solo puedes completar citas confirmadas.')
+    return
+  }
+
+  if (!canCompleteNow(appointment)) {
+    return
+  }
+
+  confirmationModal.value = {
+    open: true,
+    title: 'Completar cita',
+    message: 'La cita pasará a completada y podrás registrar la receta correspondiente.',
+    confirmText: 'Sí, completar cita',
+    appointmentId: appointment.id,
+    action: 'complete',
+  }
+}
+
+function closeConfirmationModal() {
+  confirmationModal.value = {
+    open: false,
+    title: '',
+    message: '',
+    confirmText: '',
+    appointmentId: null,
+    action: null,
+  }
+}
+
+async function confirmAppointmentAction() {
+  const id = confirmationModal.value.appointmentId
+  const action = confirmationModal.value.action
+
+  if (!id || !action) return
+
+  closeConfirmationModal()
+
+  if (action === 'cancel') {
+    await handleCancel(id)
+    return
+  }
+
+  if (action === 'complete') {
+    await handleCompleteConfirmed(id)
+  }
+}
+
+async function handleCompleteConfirmed(id: string) {
+  clearActionError(id)
+  actionSuccess.value = ''
 
   try {
-    await completeMutation.mutateAsync(appointment.id)
-  } catch (error) {
-    setActionError(appointment.id, getActionErrorMessage(error))
+    await completeMutation.mutateAsync(id)
+    actionSuccess.value = 'Cita marcada como completada.'
+  } catch (error: unknown) {
+    setActionError(id, getActionErrorMessage(error))
   }
 }
 
 async function handleCancel(id: string) {
   clearActionError(id)
-  const confirmed = window.confirm('¿Cancelar esta cita?')
-  if (!confirmed) return
+  actionSuccess.value = ''
 
   try {
     await cancelMutation.mutateAsync(id)
-  } catch (error) {
+    actionSuccess.value = 'Cita cancelada correctamente.'
+  } catch (error: unknown) {
     setActionError(id, getActionErrorMessage(error))
   }
 }
@@ -452,16 +559,7 @@ function clearActionError(appointmentId: string) {
 }
 
 function getActionErrorMessage(error: unknown) {
-  const message =
-    typeof error === 'object' && error && 'response' in error
-      ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-      : undefined
-
-  if (message === 'Appointment cannot be completed before its start time') {
-    return 'Todavía no puedes completar esta cita porque aún no llega su fecha y hora.'
-  }
-
-  return message ?? 'No se pudo completar la acción. Intenta de nuevo.'
+  return getApiErrorMessage(error)
 }
 
 function isBusy() {
@@ -505,7 +603,7 @@ async function openPrescription(appointment: Appointment) {
       indications.value = prescription.indications
       prescriptionNotes.value = prescription.notes ?? ''
     }
-  } catch (error) {
+  } catch (error: unknown) {
     prescriptionLookupFailed.value = true
     prescriptionError.value = getActionErrorMessage(error)
   } finally {
@@ -533,7 +631,11 @@ async function submitPrescription() {
       indications: indications.value,
       notes: prescriptionNotes.value || undefined,
     })
-  } catch (error) {
+
+    actionSuccess.value = 'Receta guardada correctamente.'
+    queryClient.invalidateQueries({ queryKey: ['prescriptions'] })
+    queryClient.invalidateQueries({ queryKey: ['appointments'] })
+  } catch (error: unknown) {
     prescriptionError.value = getActionErrorMessage(error)
   }
 }
@@ -606,12 +708,24 @@ async function submitPrescription() {
       </button>
     </div>
 
+    <p v-if="actionSuccess" class="success-message">
+      {{ actionSuccess }}
+    </p>
+
+    <p v-if="patientsQuery.isError.value" class="error-message">
+      {{ patientsErrorMessage }}
+    </p>
+
+    <p v-if="prescriptionsByAppointmentQuery.isError.value" class="error-message">
+      {{ prescriptionsErrorMessage }}
+    </p>
+
     <p v-if="appointmentsQuery.isLoading.value || appointmentsQuery.isFetching.value">
       Cargando agenda...
     </p>
 
     <p v-else-if="appointmentsQuery.isError.value" class="error-message">
-      No se pudo cargar la agenda.
+      {{ appointmentsErrorMessage }}
     </p>
 
     <div v-else-if="appointmentGroups.length" class="agenda-board">
@@ -669,10 +783,17 @@ async function submitPrescription() {
               </p>
 
               <p
-                v-if="completionBlockedMessage(appointment) || appointmentActionErrors[appointment.id]"
+                v-if="completionBlockedMessage(appointment)"
+                class="info-message"
+              >
+                {{ completionBlockedMessage(appointment) }}
+              </p>
+
+              <p
+                v-if="appointmentActionErrors[appointment.id]"
                 class="error-message"
               >
-                {{ appointmentActionErrors[appointment.id] || completionBlockedMessage(appointment) }}
+                {{ appointmentActionErrors[appointment.id] }}
               </p>
 
               <div class="card-actions">
@@ -690,8 +811,13 @@ async function submitPrescription() {
                   v-if="canComplete(appointment)"
                   class="primary-button inline-button"
                   type="button"
-                  :disabled="isBusy()"
-                  @click="handleComplete(appointment)"
+                  :disabled="isBusy() || !canCompleteNow(appointment)"
+                  :title="
+                    !canCompleteNow(appointment)
+                      ? completionBlockedMessage(appointment)
+                      : 'Marcar cita como completada'
+                  "
+                  @click="openCompleteConfirmation(appointment)"
                 >
                   Completar
                 </button>
@@ -710,7 +836,7 @@ async function submitPrescription() {
                   class="secondary-button inline-button"
                   type="button"
                   :disabled="isBusy()"
-                  @click="handleCancel(appointment.id)"
+                  @click="openCancelConfirmation(appointment)"
                 >
                   Cancelar
                 </button>
@@ -811,6 +937,18 @@ async function submitPrescription() {
         </section>
       </div>
     </Teleport>
+
+      <ConfirmDialog
+        :open="confirmationModal.open"
+        :variant="confirmationModal.action === 'cancel' ? 'danger' : 'success'"
+        :title="confirmationModal.title"
+        :message="confirmationModal.message"
+        :confirm-text="confirmationModal.confirmText"
+        :cancel-text="confirmationSecondaryText"
+        :loading="cancelMutation.isPending.value || completeMutation.isPending.value"
+        @confirm="confirmAppointmentAction"
+        @cancel="closeConfirmationModal"
+      />
   </AppLayout>
 </template>
 
@@ -982,4 +1120,38 @@ async function submitPrescription() {
   opacity: 0.65;
 }
 
+.confirmation-dialog .eyebrow {
+  margin-bottom: 8px;
+}
+
+.success-button:hover {
+  background: #15803d;
+}
+
+.confirmation-dialog h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.8rem;
+}
+
+.danger-button:hover {
+  background: #b91c1c;
+}
+
+.confirmation-actions .secondary-button {
+  border-radius: 999px;
+  padding: 12px 20px;
+}
+
+.info-message {
+  margin-top: 8px;
+  color: #475569;
+  font-weight: 700;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 </style>
