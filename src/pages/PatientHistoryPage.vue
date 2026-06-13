@@ -20,6 +20,7 @@ import { getDentists } from '../modules/dentists/dentists.service'
 import type { Dentist } from '../modules/dentists/dentists.types'
 import { getApiErrorMessage } from '../utils/api-error'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { getMyClinicalRecord } from '../modules/clinical-records/clinical-records.api'
 
 const authStore = useAuthStore()
 const queryClient = useQueryClient()
@@ -61,6 +62,11 @@ const appointmentsQuery = useQuery({
 const filesQuery = useQuery({
   queryKey: ['files', authStore.user?.domainId],
   queryFn: () => getFiles(authStore.user?.domainId ? { patientId: authStore.user.domainId } : undefined),
+})
+
+const clinicalRecordQuery = useQuery({
+  queryKey: ['clinical-records', 'me'],
+  queryFn: () => getMyClinicalRecord(),
 })
 
 const uploadMutation = useMutation({
@@ -120,6 +126,11 @@ const appointmentsErrorMessage = computed(() => {
 const filesErrorMessage = computed(() => {
   if (!filesQuery.error.value) return ''
   return getApiErrorMessage(filesQuery.error.value)
+})
+
+const clinicalRecordErrorMessage = computed(() => {
+  if (!clinicalRecordQuery.error.value) return ''
+  return getApiErrorMessage(clinicalRecordQuery.error.value)
 })
 
 const dentistsErrorMessage = computed(() => {
@@ -355,6 +366,33 @@ async function downloadPrescription(prescription: Prescription) {
   }
 }
 
+const clinicalRecord = computed(() => clinicalRecordQuery.data.value)
+
+const clinicalEncounters = computed(() => {
+  return clinicalRecord.value?.encounters ?? []
+})
+
+const hasClinicalBackground = computed(() => {
+  const record = clinicalRecord.value
+
+  if (!record) return false
+
+  return Boolean(
+    record.bloodType ||
+      record.allergies ||
+      record.chronicDiseases ||
+      record.currentMedications ||
+      record.surgicalHistory ||
+      record.familyHistory ||
+      record.dentalHistory ||
+      record.riskNotes,
+  )
+})
+
+function clinicalValue(value?: string | null) {
+  return value?.trim() || 'Sin registrar'
+}
+
 function validateClinicalFile(file: File) {
   if (!ALLOWED_FILE_TYPES.includes(file.type)) {
     return `Formato no compatible. Usa ${ALLOWED_FILE_LABEL}.`
@@ -375,6 +413,117 @@ function validateClinicalFile(file: File) {
         <p class="eyebrow">Paciente</p>
         <h2>Historial médico</h2>
       </div>
+    </div>
+
+    <div class="section-block">
+      <h3>Expediente clínico</h3>
+
+      <p v-if="clinicalRecordQuery.isLoading.value">Cargando expediente...</p>
+
+      <p v-else-if="clinicalRecordQuery.isError.value" class="error-message">
+        {{ clinicalRecordErrorMessage }}
+      </p>
+
+      <template v-else>
+        <div class="record-summary-grid">
+          <div class="record-field">
+            <span>Tipo de sangre</span>
+            <strong>{{ clinicalValue(clinicalRecord?.bloodType) }}</strong>
+          </div>
+
+          <div class="record-field">
+            <span>Alergias</span>
+            <strong>{{ clinicalValue(clinicalRecord?.allergies) }}</strong>
+          </div>
+
+          <div class="record-field">
+            <span>Enfermedades crónicas</span>
+            <strong>{{ clinicalValue(clinicalRecord?.chronicDiseases) }}</strong>
+          </div>
+
+          <div class="record-field">
+            <span>Medicamentos actuales</span>
+            <strong>{{ clinicalValue(clinicalRecord?.currentMedications) }}</strong>
+          </div>
+
+          <div class="record-field">
+            <span>Antecedentes quirúrgicos</span>
+            <strong>{{ clinicalValue(clinicalRecord?.surgicalHistory) }}</strong>
+          </div>
+
+          <div class="record-field">
+            <span>Antecedentes familiares</span>
+            <strong>{{ clinicalValue(clinicalRecord?.familyHistory) }}</strong>
+          </div>
+
+          <div class="record-field">
+            <span>Antecedentes dentales</span>
+            <strong>{{ clinicalValue(clinicalRecord?.dentalHistory) }}</strong>
+          </div>
+
+          <div class="record-field">
+            <span>Notas de riesgo</span>
+            <strong>{{ clinicalValue(clinicalRecord?.riskNotes) }}</strong>
+          </div>
+        </div>
+
+        <p v-if="!hasClinicalBackground" class="muted-text">
+          Aún no hay antecedentes clínicos registrados.
+        </p>
+
+        <div class="section-subheader">
+          <h4>Consultas clínicas</h4>
+        </div>
+
+        <div v-if="clinicalEncounters.length" class="list">
+          <article
+            v-for="encounter in clinicalEncounters"
+            :key="encounter.id"
+            class="card"
+          >
+            <div class="card-header">
+              <div>
+                <h3>{{ encounter.reasonForVisit }}</h3>
+                <p>{{ formatDate(encounter.createdAt) }}</p>
+              </div>
+            </div>
+
+            <p>
+              <strong>Dentista:</strong>
+              {{ dentistDisplayName(encounter.dentistId) }}
+            </p>
+
+            <p>
+              <strong>Diagnóstico:</strong>
+              {{ encounter.diagnosis }}
+            </p>
+
+            <p v-if="encounter.symptoms">
+              <strong>Síntomas:</strong>
+              {{ encounter.symptoms }}
+            </p>
+
+            <p v-if="encounter.treatmentPerformed">
+              <strong>Tratamiento realizado:</strong>
+              {{ encounter.treatmentPerformed }}
+            </p>
+
+            <p v-if="encounter.treatmentPlan">
+              <strong>Plan de tratamiento:</strong>
+              {{ encounter.treatmentPlan }}
+            </p>
+
+            <p v-if="encounter.observations">
+              <strong>Observaciones:</strong>
+              {{ encounter.observations }}
+            </p>
+          </article>
+        </div>
+
+        <div v-else class="empty-state">
+          Aún no hay consultas clínicas registradas.
+        </div>
+      </template>
     </div>
 
     <div class="section-block">
@@ -592,5 +741,41 @@ function validateClinicalFile(file: File) {
 .confirmation-actions .secondary-button {
   border-radius: 999px;
   padding: 12px 20px;
+}
+
+.record-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.record-field {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem;
+  border: 1px solid #d8e2ec;
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.record-field span {
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.record-field strong {
+  color: #172033;
+  font-weight: 800;
+}
+
+.section-subheader {
+  margin-top: 1.5rem;
+}
+
+.section-subheader h4 {
+  margin: 0;
+  color: #172033;
 }
 </style>
