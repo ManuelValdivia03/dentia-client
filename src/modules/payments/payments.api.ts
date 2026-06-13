@@ -31,13 +31,16 @@ export interface CashCut {
   payments: AppointmentPayment[]
 }
 
+export interface PaymentPeriods {
+  dates: string[]
+}
+
 export interface CreatePaymentPayload {
   appointmentId: string
   amount: number
   method: PaymentMethod
   treatmentDescription: string
   notes?: string
-  paidAt?: string
 }
 
 export async function getCashCut(from: string, to: string) {
@@ -45,6 +48,11 @@ export async function getCashCut(from: string, to: string) {
     params: { from, to },
   })
 
+  return data
+}
+
+export async function getPaymentPeriods() {
+  const { data } = await api.get<PaymentPeriods>('/payments/periods')
   return data
 }
 

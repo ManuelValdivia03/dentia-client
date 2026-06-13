@@ -10,6 +10,7 @@ import {
 import {
   createPayment,
   getCashCut,
+  getPaymentPeriods,
   type PaymentMethod,
 } from '../modules/payments/payments.api'
 import {
@@ -17,28 +18,100 @@ import {
   userDisplayName,
 } from '../modules/users/users.api'
 import { getApiErrorMessage } from '../utils/api-error'
-
-type RangePreset = 'today' | 'week' | 'month' | 'year' | 'custom'
+import {
+  buildAvailablePeriods,
+  isValidRange,
+  rangeForPreset,
+  type PaymentRange,
+  type PeriodOption,
+  type RangePreset,
+} from '../modules/payments/payments-period'
 
 const route = useRoute()
 const router = useRouter()
 const queryClient = useQueryClient()
-const today = localDate(new Date())
 const selectedPreset = ref<RangePreset>('today')
-const from = ref(today)
-const to = ref(today)
+const selectedPeriodValue = ref('')
+const range = ref<PaymentRange>(rangeForPreset('today', new Date()))
 const paymentTarget = ref<Appointment | null>(null)
 const amount = ref<number | null>(null)
 const method = ref<PaymentMethod>('CASH')
 const treatmentDescription = ref('')
 const notes = ref('')
-const paidAt = ref(localDateTime(new Date()))
 const formError = ref('')
 const successMessage = ref('')
+const rangeError = computed(() =>
+  isValidRange(range.value)
+    ? ''
+    : 'La fecha final debe ser igual o posterior a la fecha inicial.',
+)
 
 const cashCutQuery = useQuery({
-  queryKey: computed(() => ['payments', 'cash-cut', from.value, to.value]),
-  queryFn: () => getCashCut(from.value, to.value),
+  queryKey: computed(() => [
+    'payments',
+    'cash-cut',
+    range.value.from,
+    range.value.to,
+  ]),
+  queryFn: () => getCashCut(range.value.from, range.value.to),
+  enabled: computed(() => isValidRange(range.value)),
+})
+
+const paymentPeriodsQuery = useQuery({
+  queryKey: ['payments', 'periods'],
+  queryFn: getPaymentPeriods,
+})
+
+const availablePeriods = computed(() =>
+  buildAvailablePeriods(paymentPeriodsQuery.data.value?.dates ?? []),
+)
+
+const periodMenus = computed<
+  Array<{
+    value: Exclude<RangePreset, 'custom'>
+    label: string
+    emptyLabel: string
+    options: PeriodOption[]
+  }>
+>(() => [
+  {
+    value: 'today',
+    label: 'Hoy',
+    emptyLabel: 'No hay días con pagos',
+    options: availablePeriods.value.today,
+  },
+  {
+    value: 'week',
+    label: 'Semana',
+    emptyLabel: 'No hay semanas con pagos',
+    options: availablePeriods.value.week,
+  },
+  {
+    value: 'month',
+    label: 'Mes',
+    emptyLabel: 'No hay meses con pagos',
+    options: availablePeriods.value.month,
+  },
+  {
+    value: 'year',
+    label: 'Año',
+    emptyLabel: 'No hay años con pagos',
+    options: availablePeriods.value.year,
+  },
+])
+
+const selectedPeriodLabel = computed(() => {
+  if (selectedPreset.value === 'custom') {
+    return `${range.value.from} a ${range.value.to}`
+  }
+
+  const menu = periodMenus.value.find(
+    (item) => item.value === selectedPreset.value,
+  )
+  return (
+    menu?.options.find((option) => option.value === selectedPeriodValue.value)
+      ?.label ?? 'Periodo actual'
+  )
 })
 
 const appointmentsQuery = useQuery({
@@ -97,6 +170,16 @@ const createMutation = useMutation({
 })
 
 watch(
+  () => paymentPeriodsQuery.data.value?.dates,
+  () => {
+    if (selectedPeriodValue.value || selectedPreset.value === 'custom') return
+    const latestDay = availablePeriods.value.today[0]
+    if (latestDay) applyPeriod('today', latestDay)
+  },
+  { immediate: true },
+)
+
+watch(
   () => route.query.appointment,
   (appointmentId) => {
     if (typeof appointmentId !== 'string') return
@@ -122,17 +205,39 @@ watch(
 
 function selectPreset(preset: RangePreset) {
   selectedPreset.value = preset
-  if (preset === 'custom') return
+  selectedPeriodValue.value = ''
+  if (preset !== 'custom') {
+    const firstOption = availablePeriods.value[preset][0]
+    if (firstOption) applyPeriod(preset, firstOption)
+  }
+}
 
-  const end = new Date()
-  const start = new Date()
+function selectPeriod(
+  preset: Exclude<RangePreset, 'custom'>,
+  value: string,
+) {
+  const option = availablePeriods.value[preset].find(
+    (item) => item.value === value,
+  )
+  if (option) applyPeriod(preset, option)
+}
 
-  if (preset === 'week') start.setDate(end.getDate() - 6)
-  if (preset === 'month') start.setMonth(end.getMonth() - 1)
-  if (preset === 'year') start.setFullYear(end.getFullYear() - 1)
+function applyPeriod(
+  preset: Exclude<RangePreset, 'custom'>,
+  option: PeriodOption,
+) {
+  selectedPreset.value = preset
+  selectedPeriodValue.value = option.value
+  range.value = { from: option.from, to: option.to }
+}
 
-  from.value = localDate(start)
-  to.value = localDate(end)
+function updateRange(field: keyof PaymentRange, value: string) {
+  selectedPreset.value = 'custom'
+  selectedPeriodValue.value = ''
+  range.value = {
+    ...range.value,
+    [field]: value,
+  }
 }
 
 function openPaymentModal(appointment?: Appointment) {
@@ -141,7 +246,6 @@ function openPaymentModal(appointment?: Appointment) {
   method.value = 'CASH'
   treatmentDescription.value = paymentTarget.value?.reason?.trim() ?? ''
   notes.value = ''
-  paidAt.value = localDateTime(new Date())
   formError.value = ''
   successMessage.value = ''
 }
@@ -174,7 +278,6 @@ async function submitPayment() {
       method: method.value,
       treatmentDescription: treatmentDescription.value.trim(),
       notes: notes.value.trim() || undefined,
-      paidAt: paidAt.value || undefined,
     })
   } catch (error: unknown) {
     formError.value = getApiErrorMessage(error)
@@ -227,8 +330,8 @@ function exportCsv() {
     ]),
     [],
     ['CORTE DE CAJA'],
-    ['desde', from.value],
-    ['hasta', to.value],
+    ['desde', range.value.from],
+    ['hasta', range.value.to],
     ['operaciones', String(cashCutQuery.data.value?.paymentCount ?? 0)],
     ['total', String(cashCutQuery.data.value?.totalAmount ?? 0)],
   ]
@@ -237,7 +340,7 @@ function exportCsv() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `dentia-corte-${from.value}-${to.value}.csv`
+  link.download = `dentia-corte-${range.value.from}-${range.value.to}.csv`
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -246,18 +349,6 @@ function escapeCsv(value: string) {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-function localDate(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function localDateTime(date: Date) {
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${localDate(date)}T${hours}:${minutes}`
-}
 </script>
 
 <template>
@@ -296,37 +387,77 @@ function localDateTime(date: Date) {
 
       <section class="range-panel">
         <div class="preset-buttons" aria-label="Periodo del corte">
-          <button
-            v-for="preset in [
-              { value: 'today', label: 'Hoy' },
-              { value: 'week', label: '7 días' },
-              { value: 'month', label: 'Mes' },
-              { value: 'year', label: 'Año' },
-              { value: 'custom', label: 'Personalizado' },
-            ]"
-            :key="preset.value"
-            class="range-chip"
-            :class="{ active: selectedPreset === preset.value }"
-            type="button"
-            @click="selectPreset(preset.value as RangePreset)"
+          <label
+            v-for="menu in periodMenus"
+            :key="menu.value"
+            class="range-chip range-select-chip"
+            :class="{ active: selectedPreset === menu.value }"
           >
-            {{ preset.label }}
+            <span>{{ menu.label }}</span>
+            <span class="range-chip-arrow" aria-hidden="true">⌄</span>
+            <select
+              :value="
+                selectedPreset === menu.value ? selectedPeriodValue : ''
+              "
+              :aria-label="`Seleccionar ${menu.label.toLowerCase()} del corte`"
+              :disabled="menu.options.length === 0"
+              @change="
+                selectPeriod(
+                  menu.value,
+                  ($event.target as HTMLSelectElement).value,
+                )
+              "
+            >
+              <option value="" disabled>
+                {{ menu.emptyLabel }}
+              </option>
+              <option
+                v-for="option in menu.options"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+
+          <button
+            class="range-chip"
+            :class="{ active: selectedPreset === 'custom' }"
+            type="button"
+            @click="selectPreset('custom')"
+          >
+            Personalizado
           </button>
         </div>
 
-        <div class="date-fields">
+        <div v-if="selectedPreset === 'custom'" class="date-fields">
           <label>
             Desde
-            <input v-model="from" type="date" @change="selectedPreset = 'custom'" />
+            <input
+              :value="range.from"
+              type="date"
+              @change="updateRange('from', ($event.target as HTMLInputElement).value)"
+            />
           </label>
           <label>
             Hasta
-            <input v-model="to" type="date" @change="selectedPreset = 'custom'" />
+            <input
+              :value="range.to"
+              type="date"
+              @change="updateRange('to', ($event.target as HTMLInputElement).value)"
+            />
           </label>
+        </div>
+
+        <div v-else class="selected-period">
+          <span>Corte seleccionado</span>
+          <strong>{{ selectedPeriodLabel }}</strong>
         </div>
       </section>
 
-      <p v-if="cashCutQuery.isLoading.value">Calculando corte de caja...</p>
+      <p v-if="rangeError" class="error-message">{{ rangeError }}</p>
+      <p v-else-if="cashCutQuery.isLoading.value">Calculando corte de caja...</p>
       <p v-else-if="cashCutQuery.isError.value" class="error-message">
         {{ getApiErrorMessage(cashCutQuery.error.value) }}
       </p>
@@ -450,11 +581,6 @@ function localDateTime(date: Date) {
             </div>
 
             <label>
-              Fecha y hora del pago
-              <input v-model="paidAt" type="datetime-local" :max="localDateTime(new Date())" required />
-            </label>
-
-            <label>
               ¿Qué se realizó?
               <textarea
                 v-model="treatmentDescription"
@@ -508,6 +634,14 @@ function localDateTime(date: Date) {
 .preset-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .range-chip { border: 1px solid #cbd5e1; border-radius: 999px; padding: 0.55rem 0.9rem; background: #fff; color: #334155; font-weight: 800; cursor: pointer; }
 .range-chip.active { border-color: #0f766e; background: #e6f7f2; color: #0f766e; }
+.range-select-chip { position: relative; display: inline-flex; align-items: center; gap: 0.35rem; }
+.range-select-chip select { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+.range-select-chip select:disabled { cursor: not-allowed; }
+.range-select-chip:has(select:disabled) { cursor: not-allowed; opacity: 0.55; }
+.range-chip-arrow { font-size: 1rem; line-height: 1; }
+.selected-period { display: grid; gap: 0.2rem; min-width: 240px; padding: 0.65rem 0.9rem; border-radius: 14px; background: #f8fafc; text-align: right; }
+.selected-period span { color: #64748b; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+.selected-period strong { color: #0f172a; font-size: 0.9rem; }
 .date-fields label, .payment-form label { display: grid; gap: 0.4rem; color: #334155; font-size: 0.85rem; font-weight: 800; }
 .date-fields input { min-height: 2.7rem; }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
@@ -531,7 +665,8 @@ function localDateTime(date: Date) {
 .modal-actions > button { flex: 1; min-height: 3.5rem; }
 @media (max-width: 760px) {
   .payments-header, .range-panel, .section-title, .form-row { align-items: stretch; flex-direction: column; }
-  .header-actions, .date-fields { width: 100%; }
+  .header-actions, .date-fields, .selected-period { width: 100%; }
+  .selected-period { box-sizing: border-box; text-align: left; }
   .header-actions > button, .date-fields > label { flex: 1; }
 }
 </style>

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../app/api'
-import { createPayment, getCashCut } from './payments.api'
+import { createPayment, getCashCut, getPaymentPeriods } from './payments.api'
 
 vi.mock('../../app/api', () => ({
   api: {
@@ -44,5 +44,15 @@ describe('payments api', () => {
         treatmentDescription: 'Limpieza dental',
       },
     )
+  })
+
+  it('requests dates with registered payments', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: { dates: ['2026-06-13'] },
+    })
+
+    await getPaymentPeriods()
+
+    expect(api.get).toHaveBeenCalledWith('/payments/periods')
   })
 })
