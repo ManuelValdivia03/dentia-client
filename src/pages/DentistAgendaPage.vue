@@ -19,6 +19,12 @@ import {
   getUserByDomainId,
   userDisplayName,
 } from '../modules/users/users.api'
+import {
+  createClinicalEncounter,
+  getPatientClinicalRecord,
+  updatePatientClinicalRecord,
+} from '../modules/clinical-records/clinical-records.api'
+import type { ClinicalRecord } from '../modules/clinical-records/clinical-records.types'
 import { useRoute, useRouter } from 'vue-router'
 import { getApiErrorMessage } from '../utils/api-error'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -37,6 +43,32 @@ const prescriptionNotes = ref('')
 const appointmentActionErrors = ref<Record<string, string>>({})
 const prescriptionError = ref('')
 const actionSuccess = ref('')
+const clinicalRecordTarget = ref<Appointment | null>(null)
+const clinicalRecord = ref<ClinicalRecord | null>(null)
+const isLoadingClinicalRecord = ref(false)
+const clinicalRecordError = ref('')
+const clinicalRecordSuccess = ref('')
+
+const clinicalBackgroundForm = ref({
+  bloodType: '',
+  allergies: '',
+  chronicDiseases: '',
+  currentMedications: '',
+  surgicalHistory: '',
+  familyHistory: '',
+  dentalHistory: '',
+  riskNotes: '',
+})
+
+const clinicalEncounterForm = ref({
+  reasonForVisit: '',
+  arrivalDescription: '',
+  symptoms: '',
+  diagnosis: '',
+  treatmentPerformed: '',
+  treatmentPlan: '',
+  observations: '',
+})
 
 const appointmentsErrorMessage = computed(() => {
   if (!appointmentsQuery.error.value) return ''
@@ -570,6 +602,150 @@ function isBusy() {
   )
 }
 
+function resetClinicalRecordState() {
+  clinicalRecord.value = null
+  clinicalRecordError.value = ''
+  clinicalRecordSuccess.value = ''
+
+  clinicalBackgroundForm.value = {
+    bloodType: '',
+    allergies: '',
+    chronicDiseases: '',
+    currentMedications: '',
+    surgicalHistory: '',
+    familyHistory: '',
+    dentalHistory: '',
+    riskNotes: '',
+  }
+
+  clinicalEncounterForm.value = {
+    reasonForVisit: '',
+    arrivalDescription: '',
+    symptoms: '',
+    diagnosis: '',
+    treatmentPerformed: '',
+    treatmentPlan: '',
+    observations: '',
+  }
+}
+
+function fillClinicalBackgroundForm(record: ClinicalRecord) {
+  clinicalBackgroundForm.value = {
+    bloodType: record.bloodType ?? '',
+    allergies: record.allergies ?? '',
+    chronicDiseases: record.chronicDiseases ?? '',
+    currentMedications: record.currentMedications ?? '',
+    surgicalHistory: record.surgicalHistory ?? '',
+    familyHistory: record.familyHistory ?? '',
+    dentalHistory: record.dentalHistory ?? '',
+    riskNotes: record.riskNotes ?? '',
+  }
+}
+
+async function openClinicalRecord(appointment: Appointment) {
+  clinicalRecordTarget.value = appointment
+  resetClinicalRecordState()
+
+  clinicalEncounterForm.value.reasonForVisit =
+    appointment.reason ?? 'Consulta odontológica'
+
+  isLoadingClinicalRecord.value = true
+
+  try {
+    const record = await getPatientClinicalRecord(appointment.patientId)
+    clinicalRecord.value = record
+    fillClinicalBackgroundForm(record)
+  } catch (error: unknown) {
+    clinicalRecordError.value = getActionErrorMessage(error)
+  } finally {
+    isLoadingClinicalRecord.value = false
+  }
+}
+
+function closeClinicalRecord() {
+  clinicalRecordTarget.value = null
+  resetClinicalRecordState()
+}
+
+async function submitClinicalBackground() {
+  if (!clinicalRecordTarget.value) return
+
+  clinicalRecordError.value = ''
+  clinicalRecordSuccess.value = ''
+
+  try {
+    const updatedRecord = await updatePatientClinicalRecord(
+      clinicalRecordTarget.value.patientId,
+      {
+        bloodType: clinicalBackgroundForm.value.bloodType || undefined,
+        allergies: clinicalBackgroundForm.value.allergies || undefined,
+        chronicDiseases: clinicalBackgroundForm.value.chronicDiseases || undefined,
+        currentMedications:
+          clinicalBackgroundForm.value.currentMedications || undefined,
+        surgicalHistory: clinicalBackgroundForm.value.surgicalHistory || undefined,
+        familyHistory: clinicalBackgroundForm.value.familyHistory || undefined,
+        dentalHistory: clinicalBackgroundForm.value.dentalHistory || undefined,
+        riskNotes: clinicalBackgroundForm.value.riskNotes || undefined,
+      },
+    )
+
+    clinicalRecord.value = updatedRecord
+    fillClinicalBackgroundForm(updatedRecord)
+    clinicalRecordSuccess.value = 'Antecedentes actualizados correctamente.'
+  } catch (error: unknown) {
+    clinicalRecordError.value = getActionErrorMessage(error)
+  }
+}
+
+async function submitClinicalEncounter() {
+  if (!clinicalRecordTarget.value) return
+
+  clinicalRecordError.value = ''
+  clinicalRecordSuccess.value = ''
+
+  try {
+    await createClinicalEncounter(clinicalRecordTarget.value.patientId, {
+      appointmentId: clinicalRecordTarget.value.id,
+      reasonForVisit: clinicalEncounterForm.value.reasonForVisit,
+      arrivalDescription:
+        clinicalEncounterForm.value.arrivalDescription || undefined,
+      symptoms: clinicalEncounterForm.value.symptoms || undefined,
+      diagnosis: clinicalEncounterForm.value.diagnosis,
+      treatmentPerformed:
+        clinicalEncounterForm.value.treatmentPerformed || undefined,
+      treatmentPlan: clinicalEncounterForm.value.treatmentPlan || undefined,
+      observations: clinicalEncounterForm.value.observations || undefined,
+      fileIds: [],
+    })
+
+    const refreshedRecord = await getPatientClinicalRecord(
+      clinicalRecordTarget.value.patientId,
+    )
+
+    clinicalRecord.value = refreshedRecord
+    fillClinicalBackgroundForm(refreshedRecord)
+
+    clinicalEncounterForm.value = {
+      reasonForVisit:
+        clinicalRecordTarget.value.reason ?? 'Consulta odontológica',
+      arrivalDescription: '',
+      symptoms: '',
+      diagnosis: '',
+      treatmentPerformed: '',
+      treatmentPlan: '',
+      observations: '',
+    }
+
+    clinicalRecordSuccess.value = 'Consulta clínica registrada correctamente.'
+  } catch (error: unknown) {
+    clinicalRecordError.value = getActionErrorMessage(error)
+  }
+}
+
+function clinicalValue(value?: string | null) {
+  return value?.trim() || 'Sin registrar'
+}
+
 async function openPrescription(appointment: Appointment) {
   if (!canPrescribe(appointment)) {
     setActionError(
@@ -826,6 +1002,15 @@ async function submitPrescription() {
                   v-if="canPrescribe(appointment)"
                   class="secondary-button inline-button"
                   type="button"
+                  @click="openClinicalRecord(appointment)"
+                >
+                  Expediente
+                </button>
+
+                <button
+                  v-if="canPrescribe(appointment)"
+                  class="secondary-button inline-button"
+                  type="button"
                   @click="openPrescription(appointment)"
                 >
                   {{ prescriptionButtonLabel(appointment) }}
@@ -871,6 +1056,225 @@ async function submitPrescription() {
             : 'No tienes citas asignadas para esta fecha.'
       }}
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="clinicalRecordTarget"
+        class="modal-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="clinical-record-modal-title"
+      >
+        <section class="modal-card clinical-record-modal-card">
+          <header class="modal-header">
+            <div>
+              <p class="eyebrow">Expediente clínico</p>
+              <h2 id="clinical-record-modal-title">
+                {{ patientDisplayName(clinicalRecordTarget.patientId) }}
+              </h2>
+              <p class="muted-text">
+                {{ clinicalRecordTarget.reason ?? 'Consulta odontológica' }}
+              </p>
+            </div>
+          </header>
+
+          <p v-if="isLoadingClinicalRecord">Cargando expediente...</p>
+
+          <p v-if="clinicalRecordError" class="error-message">
+            {{ clinicalRecordError }}
+          </p>
+
+          <p v-if="clinicalRecordSuccess" class="success-message">
+            {{ clinicalRecordSuccess }}
+          </p>
+
+          <template v-if="!isLoadingClinicalRecord">
+            <section class="clinical-section">
+              <h3>Antecedentes</h3>
+
+              <form class="modal-form" @submit.prevent="submitClinicalBackground">
+                <label>
+                  Tipo de sangre
+                  <input v-model="clinicalBackgroundForm.bloodType" placeholder="O+" />
+                </label>
+
+                <label>
+                  Alergias
+                  <textarea
+                    v-model="clinicalBackgroundForm.allergies"
+                    rows="2"
+                    placeholder="Penicilina, anestesia, alimentos..."
+                  />
+                </label>
+
+                <label>
+                  Enfermedades crónicas
+                  <textarea
+                    v-model="clinicalBackgroundForm.chronicDiseases"
+                    rows="2"
+                    placeholder="Diabetes, hipertensión..."
+                  />
+                </label>
+
+                <label>
+                  Medicamentos actuales
+                  <textarea
+                    v-model="clinicalBackgroundForm.currentMedications"
+                    rows="2"
+                    placeholder="Medicamentos que consume actualmente"
+                  />
+                </label>
+
+                <label>
+                  Antecedentes quirúrgicos
+                  <textarea
+                    v-model="clinicalBackgroundForm.surgicalHistory"
+                    rows="2"
+                  />
+                </label>
+
+                <label>
+                  Antecedentes familiares
+                  <textarea
+                    v-model="clinicalBackgroundForm.familyHistory"
+                    rows="2"
+                  />
+                </label>
+
+                <label>
+                  Antecedentes dentales
+                  <textarea
+                    v-model="clinicalBackgroundForm.dentalHistory"
+                    rows="2"
+                  />
+                </label>
+
+                <label>
+                  Notas de riesgo
+                  <textarea
+                    v-model="clinicalBackgroundForm.riskNotes"
+                    rows="2"
+                  />
+                </label>
+
+                <button class="primary-button" type="submit">
+                  Guardar antecedentes
+                </button>
+              </form>
+            </section>
+
+            <section class="clinical-section">
+              <h3>Registrar consulta clínica</h3>
+
+              <form class="modal-form" @submit.prevent="submitClinicalEncounter">
+                <label>
+                  Motivo de consulta
+                  <input
+                    v-model="clinicalEncounterForm.reasonForVisit"
+                    required
+                  />
+                </label>
+
+                <label>
+                  Descripción de llegada
+                  <textarea
+                    v-model="clinicalEncounterForm.arrivalDescription"
+                    rows="2"
+                  />
+                </label>
+
+                <label>
+                  Síntomas
+                  <textarea
+                    v-model="clinicalEncounterForm.symptoms"
+                    rows="2"
+                  />
+                </label>
+
+                <label>
+                  Diagnóstico
+                  <input
+                    v-model="clinicalEncounterForm.diagnosis"
+                    required
+                  />
+                </label>
+
+                <label>
+                  Tratamiento realizado
+                  <textarea
+                    v-model="clinicalEncounterForm.treatmentPerformed"
+                    rows="2"
+                  />
+                </label>
+
+                <label>
+                  Plan de tratamiento
+                  <textarea
+                    v-model="clinicalEncounterForm.treatmentPlan"
+                    rows="2"
+                  />
+                </label>
+
+                <label>
+                  Observaciones
+                  <textarea
+                    v-model="clinicalEncounterForm.observations"
+                    rows="2"
+                  />
+                </label>
+
+                <button class="primary-button" type="submit">
+                  Registrar consulta
+                </button>
+              </form>
+            </section>
+
+            <section class="clinical-section">
+              <h3>Consultas registradas</h3>
+
+              <div v-if="clinicalRecord?.encounters.length" class="nested-list">
+                <article
+                  v-for="encounter in clinicalRecord.encounters"
+                  :key="encounter.id"
+                  class="list-item clinical-encounter-item"
+                >
+                  <div>
+                    <strong>{{ encounter.reasonForVisit }}</strong>
+                    <p class="muted-text">
+                      {{ formatTime(encounter.createdAt) }} · {{ encounter.diagnosis }}
+                    </p>
+
+                    <p v-if="encounter.treatmentPerformed">
+                      <strong>Tratamiento:</strong>
+                      {{ encounter.treatmentPerformed }}
+                    </p>
+
+                    <p v-if="encounter.observations">
+                      <strong>Observaciones:</strong>
+                      {{ encounter.observations }}
+                    </p>
+                  </div>
+                </article>
+              </div>
+
+              <div v-else class="empty-state">
+                Aún no hay consultas clínicas registradas.
+              </div>
+            </section>
+          </template>
+
+          <div class="modal-actions">
+            <button
+              class="modal-action-button modal-action-secondary"
+              type="button"
+              @click="closeClinicalRecord"
+            >
+              Cerrar
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -1183,5 +1587,28 @@ async function submitPrescription() {
   color: #047857;
   font-size: 0.85rem;
   font-weight: 800;
+}
+
+.clinical-record-modal-card {
+  width: min(100%, 860px);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.clinical-section {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.clinical-section h3 {
+  margin: 0;
+  color: #172033;
+}
+
+.clinical-encounter-item {
+  align-items: flex-start;
 }
 </style>
