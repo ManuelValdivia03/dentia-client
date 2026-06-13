@@ -831,6 +831,21 @@ async function submitPrescription() {
                   {{ prescriptionButtonLabel(appointment) }}
                 </button>
 
+                <RouterLink
+                  v-if="canPrescribe(appointment) && !appointment.hasPayment"
+                  class="primary-button inline-button payment-link"
+                  :to="{ path: '/dentist/payments', query: { appointment: appointment.id } }"
+                >
+                  Registrar pago
+                </RouterLink>
+
+                <span
+                  v-if="canPrescribe(appointment) && appointment.hasPayment"
+                  class="payment-registered-badge"
+                >
+                  Pago registrado
+                </span>
+
                 <button
                   v-if="canCancel(appointment)"
                   class="secondary-button inline-button"
@@ -1153,5 +1168,20 @@ async function submitPrescription() {
 .secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.payment-link {
+  text-decoration: none;
+}
+
+.payment-registered-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 0.85rem;
+  font-weight: 800;
 }
 </style>

@@ -139,6 +139,10 @@ function confirmLogout() {
           <span class="nav-link-text">Valoraciones</span>
         </RouterLink>
 
+        <RouterLink v-if="normalizedRole === 'DENTIST'" to="/dentist/payments">
+          <span class="nav-link-text">Pagos y caja</span>
+        </RouterLink>
+
         <RouterLink v-if="normalizedRole === 'ADMIN'" to="/admin/dashboard">
           <span class="nav-link-text">Administración</span>
         </RouterLink>
